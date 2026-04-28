@@ -10,6 +10,23 @@ interface PlaybackSource {
   sourceUrl: string;
 }
 
+interface PlaybackConnection {
+  effectiveType?: string;
+  saveData?: boolean;
+}
+
+export const shouldUseLegacyPlayback = (connection?: PlaybackConnection) => {
+  if (!connection) {
+    return false;
+  }
+
+  if (connection.saveData) {
+    return true;
+  }
+
+  return connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g';
+};
+
 const PLAYER_TOKEN_STORAGE_PREFIX = 'adsplay-player-token:';
 
 @Injectable()
@@ -445,7 +462,11 @@ export class PlayerSessionService {
     }
 
     const video = activeProfile.videos[index];
-    const serverUrl = this.api.getMediaStreamUrl(video);
+    const connection = (navigator as Navigator & { connection?: PlaybackConnection }).connection;
+    const playbackVariant: 'quality' | 'legacy' = shouldUseLegacyPlayback(connection)
+      ? 'legacy'
+      : 'quality';
+    const serverUrl = this.api.getMediaStreamUrl(video, playbackVariant);
     const posterUrl = video.posterFilename ? this.api.getVideoPosterUrl(video) : '';
     const hlsUrl =
       video.mediaType === 'video' && video.processingStatus === 'ready' && video.hlsManifestPath

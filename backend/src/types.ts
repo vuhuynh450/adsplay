@@ -1,6 +1,7 @@
 export type MediaType = 'video' | 'image';
 export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
 export type VideoStreamVariant = 'optimized' | 'original';
+export type VideoPlaybackVariant = 'quality' | 'legacy';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
 
 export interface Video {

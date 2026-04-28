@@ -105,7 +105,15 @@ export class VideoList {
       return 'Đang xếp hàng';
     }
 
-    return video.streamVariant === 'optimized' ? 'Sẵn sàng HD' : 'Sẵn sàng bản gốc';
+    if (video.hlsManifestPath) {
+      return 'Sẵn sàng HD (mặc định)';
+    }
+
+    if (video.streamVariant === 'optimized') {
+      return 'Có bản legacy dự phòng';
+    }
+
+    return 'Sẵn sàng bản gốc';
   }
 
   getPosterUrl(video: Video) {

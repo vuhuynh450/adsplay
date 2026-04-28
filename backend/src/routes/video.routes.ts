@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import multer from 'multer';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
+import type { VideoPlaybackVariant } from '../types';
 import express, { Router } from 'express';
 import { getConfig } from '../config';
 import { AppError, asyncHandler } from '../errors';
@@ -33,6 +34,14 @@ const config = getConfig();
 const MAX_FILE_SIZE = config.maxUploadSizeBytes;
 const allowedMimeTypes = getVideoPolicy().allowedMimeTypes;
 const allowedMimeTypeMessage = 'Only MP4, WebM, OGG, MOV, JPG, PNG, GIF, and WebP files are allowed.';
+
+const readPlaybackVariant = (raw: unknown): VideoPlaybackVariant => {
+    if (raw === 'legacy') {
+        return 'legacy';
+    }
+
+    return 'quality';
+};
 
 const contentTypeByExtension: Record<string, string> = {
     '.m3u8': 'application/vnd.apple.mpegurl',
@@ -205,13 +214,16 @@ videoRouter.delete(
 videoRouter.get(
     '/:id/stream',
     asyncHandler(async (req, res) => {
-        const { absolutePath, video } = await getVideoStreamFile(requireNonEmptyString(req.params.id, 'id'));
+        const { absolutePath, contentType, video } = await getVideoStreamFile(
+            requireNonEmptyString(req.params.id, 'id'),
+            readPlaybackVariant(req.query.variant),
+        );
         const stats = await fs.stat(absolutePath);
         const rangeHeader = req.headers.range;
 
         res.setHeader('Accept-Ranges', 'bytes');
         res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-        res.setHeader('Content-Type', video.mimeType || 'video/mp4');
+        res.setHeader('Content-Type', contentType);
         res.setHeader('ETag', `${video.id}:${video.updatedAt}`);
 
         if (!rangeHeader) {

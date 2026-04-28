@@ -131,7 +131,9 @@ http://192.168.1.50:3000/player
 - Videos may be optimized in the background after upload
 - AdPlay also creates poster images for the admin library when processing succeeds
 - Image ads are ready immediately after upload and can be mixed into the same playlist as videos
-- The modern player prefers HLS playback automatically and falls back to direct MP4 streaming if needed
+- The modern player is quality-first: it prefers HLS/source playback by default
+- Legacy MP4 is only used as a fallback on weak network or older devices
+- For debugging/manual fallback, `/api/videos/:id/stream?variant=legacy` is available
 - Mixed playlists rotate through both videos and still images automatically
 - After the first successful open, the player keeps its pairing token locally so the visible TV URL stays clean
 

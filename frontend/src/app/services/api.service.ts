@@ -189,12 +189,18 @@ export class ApiService {
         });
     }
 
-    getVideoStreamUrl(video: Pick<Video, 'id' | 'updatedAt'>): string {
-        return `${this.apiUrl}/videos/${video.id}/stream?v=${encodeURIComponent(video.updatedAt)}`;
+    getVideoStreamUrl(
+        video: Pick<Video, 'id' | 'updatedAt'>,
+        variant: 'quality' | 'legacy' = 'quality',
+    ): string {
+        return `${this.apiUrl}/videos/${video.id}/stream?v=${encodeURIComponent(video.updatedAt)}&variant=${variant}`;
     }
 
-    getMediaStreamUrl(video: Pick<Video, 'id' | 'updatedAt'>): string {
-        return this.getVideoStreamUrl(video);
+    getMediaStreamUrl(
+        video: Pick<Video, 'id' | 'updatedAt'>,
+        variant: 'quality' | 'legacy' = 'quality',
+    ): string {
+        return this.getVideoStreamUrl(video, variant);
     }
 
     getVideoPosterUrl(video: Pick<Video, 'id' | 'updatedAt'>): string {

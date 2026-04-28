@@ -313,7 +313,7 @@ const processNext = async () => {
         const hlsDir = ensureHlsDir(video.id);
         let hlsManifestPath: string | undefined;
         try {
-            const playlistPath = await transcodeToHls(selectedStreamPath, hlsDir);
+            const playlistPath = await transcodeToHls(sourcePath, hlsDir);
             hlsManifestPath = toUploadsRelativePath(playlistPath);
         } catch (error) {
             await fs.remove(hlsDir);

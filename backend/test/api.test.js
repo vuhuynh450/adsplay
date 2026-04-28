@@ -328,6 +328,138 @@ test('resumable upload sessions reject undersized non-final chunks and still ass
   assert.equal(completeResponse.body.sourceSize, fileBuffer.length);
 });
 
+test('stream endpoint defaults to source and supports legacy variant when optimized file exists', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('ORIGINAL-CONTENT-123456'), {
+      contentType: 'video/mp4',
+      filename: 'variant-test.mp4',
+    });
+
+  const videoId = uploadResponse.body.id;
+  const sourceAbsolutePath = path.join(process.env.UPLOADS_DIR, uploadResponse.body.sourceFilename);
+  const legacyRelativePath = path.join('processed', `${videoId}-legacy.mp4`);
+  const legacyAbsolutePath = path.join(process.env.UPLOADS_DIR, legacyRelativePath);
+
+  await fs.outputFile(sourceAbsolutePath, Buffer.from('SOURCE-QUALITY-DATA'));
+  await fs.outputFile(legacyAbsolutePath, Buffer.from('LEGACY-DATA'));
+
+  await dbRepository.updateVideo(videoId, (draft) => {
+    draft.filename = legacyRelativePath;
+    draft.size = Buffer.byteLength('LEGACY-DATA');
+    draft.streamVariant = 'optimized';
+  });
+
+  const defaultResponse = await request(app).get(`/api/videos/${videoId}/stream`);
+  assert.equal(defaultResponse.status, 200);
+  assert.equal(defaultResponse.body.toString(), 'SOURCE-QUALITY-DATA');
+
+  const legacyResponse = await request(app).get(`/api/videos/${videoId}/stream?variant=legacy`);
+  assert.equal(legacyResponse.status, 200);
+  assert.equal(legacyResponse.body.toString(), 'LEGACY-DATA');
+});
+
+test('stream endpoint returns content-type by selected source or legacy file', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('SOURCE-MOV-DATA'), {
+      contentType: 'video/quicktime',
+      filename: 'mime-variant.mov',
+    });
+
+  const videoId = uploadResponse.body.id;
+  const sourceAbsolutePath = path.join(process.env.UPLOADS_DIR, uploadResponse.body.sourceFilename);
+  const legacyRelativePath = path.join('processed', `${videoId}-legacy.mp4`);
+  const legacyAbsolutePath = path.join(process.env.UPLOADS_DIR, legacyRelativePath);
+
+  await fs.outputFile(sourceAbsolutePath, Buffer.from('SOURCE-MOV-DATA'));
+  await fs.outputFile(legacyAbsolutePath, Buffer.from('LEGACY-MP4-DATA'));
+
+  await dbRepository.updateVideo(videoId, (draft) => {
+    draft.filename = legacyRelativePath;
+    draft.mimeType = 'video/mp4';
+    draft.size = Buffer.byteLength('LEGACY-MP4-DATA');
+    draft.streamVariant = 'optimized';
+  });
+
+  const defaultResponse = await request(app).get(`/api/videos/${videoId}/stream`);
+  assert.equal(defaultResponse.status, 200);
+  assert.equal(defaultResponse.headers['content-type'], 'video/quicktime');
+
+  const legacyResponse = await request(app).get(`/api/videos/${videoId}/stream?variant=legacy`);
+  assert.equal(legacyResponse.status, 200);
+  assert.equal(legacyResponse.headers['content-type'], 'video/mp4');
+});
+
+test('stream endpoint treats unknown variant as quality default', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('SOURCE-ONLY-DATA'), {
+      contentType: 'video/mp4',
+      filename: 'invalid-variant.mp4',
+    });
+
+  const videoId = uploadResponse.body.id;
+  const sourceAbsolutePath = path.join(process.env.UPLOADS_DIR, uploadResponse.body.sourceFilename);
+  const legacyRelativePath = path.join('processed', `${videoId}-legacy.mp4`);
+  const legacyAbsolutePath = path.join(process.env.UPLOADS_DIR, legacyRelativePath);
+
+  await fs.outputFile(sourceAbsolutePath, Buffer.from('QUALITY-SOURCE-DATA'));
+  await fs.outputFile(legacyAbsolutePath, Buffer.from('LEGACY-BACKUP-DATA'));
+
+  await dbRepository.updateVideo(videoId, (draft) => {
+    draft.filename = legacyRelativePath;
+    draft.size = Buffer.byteLength('LEGACY-BACKUP-DATA');
+    draft.streamVariant = 'optimized';
+  });
+
+  const response = await request(app).get(`/api/videos/${videoId}/stream?variant=unexpected`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.toString(), 'QUALITY-SOURCE-DATA');
+});
+
+test('stream endpoint falls back to legacy file when source is missing', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('SOURCE-INITIAL-DATA'), {
+      contentType: 'video/mp4',
+      filename: 'legacy-fallback.mp4',
+    });
+
+  const videoId = uploadResponse.body.id;
+  const sourceAbsolutePath = path.join(process.env.UPLOADS_DIR, uploadResponse.body.sourceFilename);
+  const legacyRelativePath = path.join('processed', `${videoId}-legacy.mp4`);
+  const legacyAbsolutePath = path.join(process.env.UPLOADS_DIR, legacyRelativePath);
+
+  await fs.outputFile(sourceAbsolutePath, Buffer.from('SOURCE-WILL-BE-REMOVED'));
+  await fs.outputFile(legacyAbsolutePath, Buffer.from('LEGACY-ONLY-DATA'));
+  await fs.remove(sourceAbsolutePath);
+
+  await dbRepository.updateVideo(videoId, (draft) => {
+    draft.filename = legacyRelativePath;
+    draft.size = Buffer.byteLength('LEGACY-ONLY-DATA');
+    draft.streamVariant = 'optimized';
+  });
+
+  const response = await request(app).get(`/api/videos/${videoId}/stream`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.toString(), 'LEGACY-ONLY-DATA');
+});
+
 test('missing video files return a clean app error', async () => {
   const { authHeader } = await loginAsAdmin();
 

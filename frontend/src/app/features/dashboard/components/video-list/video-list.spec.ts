@@ -45,4 +45,32 @@ describe('VideoList', () => {
 
     expect(component.uploadError).toContain('0.5 GB');
   });
+
+  it('shows quality-first status labels', () => {
+    const component = new VideoList();
+
+    const label = component.getProcessingLabel(
+      video({
+        hlsManifestPath: 'processed/hls/demo/playlist.m3u8',
+        processingStatus: 'ready',
+        streamVariant: 'optimized',
+      }),
+    );
+
+    expect(label).toBe('Sẵn sàng HD (mặc định)');
+  });
+
+  it('shows legacy backup label when optimized file exists without HLS', () => {
+    const component = new VideoList();
+
+    const label = component.getProcessingLabel(
+      video({
+        hlsManifestPath: undefined,
+        processingStatus: 'ready',
+        streamVariant: 'optimized',
+      }),
+    );
+
+    expect(label).toBe('Có bản legacy dự phòng');
+  });
 });

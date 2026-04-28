@@ -5,6 +5,7 @@ import { dbRepository } from '../db';
 import { getConfig } from '../config';
 import { AppError } from '../errors';
 import { enqueueVideoOptimization } from './media.service';
+import type { VideoPlaybackVariant } from '../types';
 
 const config = getConfig();
 const VIDEO_MIME_TYPES: string[] = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
@@ -95,21 +96,36 @@ export const getVideoPolicy = () => ({
     resumableChunkSizeBytes: config.resumableChunkSizeBytes,
 });
 
-export const getVideoStreamFile = async (id: string) => {
+export const getVideoStreamFile = async (id: string, variant: VideoPlaybackVariant = 'quality') => {
     const video = await getVideoById(id);
-    const preferredPath = path.join(config.uploadsDir, video.filename);
     const sourcePath = path.join(config.uploadsDir, video.sourceFilename);
-    const preferredExists = await fs.pathExists(preferredPath);
+    const legacyPath = path.join(config.uploadsDir, video.filename);
     const sourceExists = await fs.pathExists(sourcePath);
+    const legacyExists = await fs.pathExists(legacyPath);
 
-    if (!preferredExists && !sourceExists) {
+    if (!sourceExists && !legacyExists) {
         throw new AppError(404, 'VIDEO_FILE_NOT_FOUND', 'Video file is missing from disk.');
     }
 
-    const selectedPath = preferredExists ? preferredPath : sourcePath;
+    if (variant === 'legacy' && legacyExists) {
+        return {
+            absolutePath: legacyPath,
+            contentType: video.mimeType || 'video/mp4',
+            video,
+        };
+    }
+
+    if (sourceExists) {
+        return {
+            absolutePath: sourcePath,
+            contentType: video.sourceMimeType || video.mimeType || 'video/mp4',
+            video,
+        };
+    }
 
     return {
-        absolutePath: selectedPath,
+        absolutePath: legacyPath,
+        contentType: video.mimeType || 'video/mp4',
         video,
     };
 };
