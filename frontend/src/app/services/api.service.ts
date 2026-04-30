@@ -51,6 +51,7 @@ export interface PlayerProfileSummary {
 export interface PlayerProfile {
     name: string;
     slug: string;
+    orientation: ProfileOrientation;
     videos: Video[];
 }
 

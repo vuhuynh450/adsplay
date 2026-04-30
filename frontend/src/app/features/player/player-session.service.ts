@@ -10,6 +10,13 @@ interface PlaybackSource {
   sourceUrl: string;
 }
 
+const ORIENTATION_ROTATION_MAP: Record<NonNullable<PlayerProfile['orientation']>, number> = {
+  landscape: 0,
+  rotate90: 90,
+  rotate180: 180,
+  rotate270: 270,
+};
+
 const PLAYER_TOKEN_STORAGE_PREFIX = 'adsplay-player-token:';
 
 @Injectable()
@@ -256,6 +263,19 @@ export class PlayerSessionService {
 
   onImageLoaded() {
     this.requestFullscreenIfNeeded();
+  }
+
+  getRotationDegrees() {
+    const orientation = this.profile()?.orientation || 'landscape';
+    return ORIENTATION_ROTATION_MAP[orientation] ?? 0;
+  }
+
+  getMediaWrapperStyle() {
+    const rotation = this.getRotationDegrees();
+    return {
+      transform: `rotate(${rotation}deg)`,
+      'transform-origin': 'center center',
+    };
   }
 
   private resetActivityTimer() {

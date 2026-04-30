@@ -85,6 +85,7 @@
     </div>
     } @else {
 	    <div class="w-full h-full bg-black relative group/player flex items-center justify-center overflow-hidden">
+        <div class="w-full h-full flex items-center justify-center" [style]="session.getMediaWrapperStyle()">
 	        @if (session.currentMediaType() === 'image') {
           <img [src]="session.currentImageUrl()" class="relative z-10 max-w-full max-h-full w-full h-full object-contain shadow-2xl transition-all duration-700"
             alt="Current ad image" (load)="session.onImageLoaded()">
@@ -97,6 +98,7 @@
             (loadedmetadata)="session.onMetadataLoaded($event)">
           </video>
           }
+        </div>
     </div>
 
     @if (session.currentMediaType() === 'video' && session.showUnmuteOverlay()) {
