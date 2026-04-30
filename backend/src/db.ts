@@ -50,15 +50,25 @@ const normalizeVideo = (video: Partial<Video>): Video => {
     };
 };
 
+const validProfileOrientations: Profile['orientation'][] = [
+    'landscape',
+    'rotate90',
+    'rotate180',
+    'rotate270',
+];
+
 const normalizeProfile = (profile: Partial<Profile>): Profile => {
     const timestamp = profile.updatedAt || profile.createdAt || new Date().toISOString();
+    const orientation = validProfileOrientations.includes(profile.orientation as Profile['orientation'])
+        ? (profile.orientation as Profile['orientation'])
+        : 'landscape';
 
     return {
         createdAt: profile.createdAt || timestamp,
         id: profile.id || createEntityId(),
         lastSeen: profile.lastSeen,
         name: profile.name || '',
-        orientation: profile.orientation || 'landscape',
+        orientation,
         updatedAt: profile.updatedAt || timestamp,
         videoIds: Array.isArray(profile.videoIds) ? [...new Set(profile.videoIds)] : [],
     };
