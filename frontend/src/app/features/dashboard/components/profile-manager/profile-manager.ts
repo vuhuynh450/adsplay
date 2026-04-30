@@ -52,7 +52,7 @@ export class ProfileManager {
     this.isEditing = true;
     this.editingId = profile.id;
     this.profileName = profile.name;
-    this.profileOrientation = profile.orientation;
+    this.profileOrientation = profile.orientation ?? 'landscape';
     this.formError = '';
     this.playlistVideos = profile.videoIds
       .map((id) => this.videos.find((video) => video.id === id))

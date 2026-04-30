@@ -73,6 +73,30 @@ describe('ProfileManager', () => {
     ]);
   });
 
+  it('falls back to landscape for legacy profile without orientation', () => {
+    const component = new ProfileManager();
+    const emitted: unknown[] = [];
+
+    const legacyProfile: any = profile({ id: 'profile-legacy', name: 'Legacy TV', videoIds: ['video-1'] });
+    delete legacyProfile.orientation;
+
+    component.videos = [video({ id: 'video-1' })];
+    component.profiles = [legacyProfile as unknown as Profile];
+    component.saveProfile.subscribe((payload) => emitted.push(payload));
+
+    component.openEdit(component.profiles[0]);
+    component.save();
+
+    expect(emitted).toEqual([
+      {
+        id: 'profile-legacy',
+        name: 'Legacy TV',
+        orientation: 'landscape',
+        videoIds: ['video-1'],
+      },
+    ]);
+  });
+
   it('blocks duplicate slug collisions before emitting', () => {
     const component = new ProfileManager();
 
