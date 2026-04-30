@@ -331,6 +331,23 @@ test('resumable upload sessions reject undersized non-final chunks and still ass
   assert.equal(completeResponse.body.sourceSize, fileBuffer.length);
 });
 
+test('legacy invalid profile orientation is normalized to landscape', async () => {
+  await dbRepository.upsertProfile({
+    name: 'Legacy Orientation Screen',
+    orientation: 'portrait',
+    videoIds: [],
+  });
+
+  const normalizedProfile = await dbRepository.findProfileBySlug('legacy-orientation-screen');
+  assert.ok(normalizedProfile);
+  assert.equal(normalizedProfile.orientation, 'landscape');
+
+  const profiles = await dbRepository.listProfiles();
+  const listedProfile = profiles.find((profile) => profile.name === 'Legacy Orientation Screen');
+  assert.ok(listedProfile);
+  assert.equal(listedProfile.orientation, 'landscape');
+});
+
 test('missing video files return a clean app error', async () => {
   const { authHeader } = await loginAsAdmin();
 
