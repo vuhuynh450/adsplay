@@ -11,7 +11,12 @@ import {
     removeProfile,
     saveProfile,
 } from '../services/profile.service';
-import { requireOptionalString, requireStringArray, requireNonEmptyString } from '../utils/validation';
+import {
+    requireOptionalProfileOrientation,
+    requireOptionalString,
+    requireStringArray,
+    requireNonEmptyString,
+} from '../utils/validation';
 
 export const profileRouter = Router();
 
@@ -70,7 +75,8 @@ profileRouter.post(
         const name = requireNonEmptyString(req.body?.name, 'name');
         const videoIds = requireStringArray(req.body?.videoIds, 'videoIds');
         const id = requireOptionalString(req.body?.id, 'id');
-        const profile = await saveProfile({ id, name, videoIds });
+        const orientation = requireOptionalProfileOrientation(req.body?.orientation, 'orientation') || 'landscape';
+        const profile = await saveProfile({ id, name, orientation, videoIds });
         res.setHeader('Cache-Control', 'private, no-store');
         res.json(profile);
     }),

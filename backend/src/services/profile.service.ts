@@ -81,7 +81,12 @@ export const getDetailedProfileBySlug = async (profileSlug: string) => {
     return toPlayerProfile(await withVideos(profile));
 };
 
-export const saveProfile = async (input: { id?: string; name: string; videoIds: string[] }) => {
+export const saveProfile = async (input: {
+    id?: string;
+    name: string;
+    orientation: Profile['orientation'];
+    videoIds: string[];
+}) => {
     const profiles = await dbRepository.listProfiles();
     if (input.id && !profiles.some((profile) => profile.id === input.id)) {
         throw new AppError(404, 'PROFILE_NOT_FOUND', 'Profile not found.');

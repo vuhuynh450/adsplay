@@ -1,4 +1,5 @@
 import { AppError } from '../errors';
+import type { ProfileOrientation } from '../types';
 
 export const requireNonEmptyString = (
     value: unknown,
@@ -39,4 +40,23 @@ export const requireStringArray = (value: unknown, field: string) => {
     }
 
     return [...new Set(value)];
+};
+
+const validProfileOrientations: ProfileOrientation[] = [
+    'landscape',
+    'rotate90',
+    'rotate180',
+    'rotate270',
+];
+
+export const requireOptionalProfileOrientation = (value: unknown, field: string): ProfileOrientation | undefined => {
+    if (value == null) {
+        return undefined;
+    }
+
+    if (typeof value !== 'string' || !validProfileOrientations.includes(value as ProfileOrientation)) {
+        throw new AppError(400, 'VALIDATION_ERROR', `${field} must be one of: ${validProfileOrientations.join(', ')}.`);
+    }
+
+    return value as ProfileOrientation;
 };

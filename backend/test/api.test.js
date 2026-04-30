@@ -198,6 +198,32 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(deleteProfileResponse.status, 200);
 });
 
+test('POST /api/profiles rejects invalid orientation with 400 validation error', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('fake mp4 content'), {
+      contentType: 'video/mp4',
+      filename: 'orientation-check.mp4',
+    });
+
+  assert.equal(uploadResponse.status, 200);
+
+  const createProfileResponse = await request(app)
+    .post('/api/profiles')
+    .set(authHeader)
+    .send({
+      name: 'Invalid Orientation Screen',
+      orientation: 'flip45',
+      videoIds: [uploadResponse.body.id],
+    });
+
+  assert.equal(createProfileResponse.status, 400);
+  assert.equal(createProfileResponse.body.error.code, 'VALIDATION_ERROR');
+});
+
 test('resumable upload sessions resume per client key without cross-client collisions', async () => {
   const { authHeader } = await loginAsAdmin();
   const fileBuffer = Buffer.from('abcdefghijklmnopqrstuvwxyz');
