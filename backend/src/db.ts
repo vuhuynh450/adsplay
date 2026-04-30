@@ -58,6 +58,7 @@ const normalizeProfile = (profile: Partial<Profile>): Profile => {
         id: profile.id || createEntityId(),
         lastSeen: profile.lastSeen,
         name: profile.name || '',
+        orientation: profile.orientation || 'landscape',
         updatedAt: profile.updatedAt || timestamp,
         videoIds: Array.isArray(profile.videoIds) ? [...new Set(profile.videoIds)] : [],
     };
@@ -127,7 +128,12 @@ export const dbRepository = {
             profile.updatedAt = heartbeatAt;
         });
     },
-    async upsertProfile(input: { id?: string; name: string; videoIds: string[] }) {
+    async upsertProfile(input: {
+        id?: string;
+        name: string;
+        orientation?: Profile['orientation'];
+        videoIds: string[];
+    }) {
         const now = new Date().toISOString();
 
         await mutate((db) => {
@@ -135,6 +141,7 @@ export const dbRepository = {
                 const existing = db.profiles.find((profile) => profile.id === input.id);
                 if (existing) {
                     existing.name = input.name;
+                    existing.orientation = input.orientation || existing.orientation || 'landscape';
                     existing.videoIds = [...new Set(input.videoIds)];
                     existing.updatedAt = now;
                     return;
@@ -146,6 +153,7 @@ export const dbRepository = {
                     createdAt: now,
                     id: createEntityId(),
                     name: input.name,
+                    orientation: input.orientation || 'landscape',
                     updatedAt: now,
                     videoIds: input.videoIds,
                 }),

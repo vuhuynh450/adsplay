@@ -109,6 +109,7 @@ test('video upload and profile lifecycle work end-to-end', async () => {
 
   assert.equal(createProfileResponse.status, 200);
   assert.equal(createProfileResponse.body.slug, 'lobby-screen');
+  assert.equal(createProfileResponse.body.orientation, 'landscape');
   assert.equal(createProfileResponse.body.videos.length, 1);
   assert.ok(createProfileResponse.body.playerAccessToken);
 
@@ -125,12 +126,14 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(adminProfilesResponse.status, 200);
   const adminProfile = adminProfilesResponse.body.find((profile) => profile.id === createProfileResponse.body.id);
   assert.equal(adminProfile.playerAccessToken, createProfileResponse.body.playerAccessToken);
+  assert.equal(adminProfile.orientation, 'landscape');
   assert.equal(adminProfile.videoIds.length, 1);
 
   const publicProfile = await request(app).get('/api/profiles/slug/lobby-screen');
   assert.equal(publicProfile.status, 200);
   assert.equal(publicProfile.body.name, 'Lobby Screen');
   assert.equal(publicProfile.body.slug, 'lobby-screen');
+  assert.equal(publicProfile.body.orientation, 'landscape');
   assert.equal(publicProfile.body.id, undefined);
   assert.equal(publicProfile.body.lastSeen, undefined);
 

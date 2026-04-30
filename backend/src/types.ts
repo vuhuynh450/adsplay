@@ -2,6 +2,7 @@ export type MediaType = 'video' | 'image';
 export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
 export type VideoStreamVariant = 'optimized' | 'original';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
+export type ProfileOrientation = 'landscape' | 'portrait';
 
 export interface Video {
     createdAt: string;
@@ -32,6 +33,7 @@ export interface Profile {
     id: string;
     lastSeen?: string;
     name: string;
+    orientation: ProfileOrientation;
     updatedAt: string;
     videoIds: string[];
 }
@@ -70,6 +72,7 @@ export interface PlayerProfileSummary {
 
 export interface PlayerProfile {
     name: string;
+    orientation: ProfileOrientation;
     slug: string;
     videos: Video[];
 }

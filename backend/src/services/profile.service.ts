@@ -48,6 +48,7 @@ const toPlayerProfileSummary = (profile: Profile): PlayerProfileSummary => ({
 
 const toPlayerProfile = (profile: DetailedProfile): PlayerProfile => ({
     name: profile.name,
+    orientation: profile.orientation,
     slug: profile.slug,
     videos: profile.videos,
 });
