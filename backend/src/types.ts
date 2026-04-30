@@ -2,7 +2,7 @@ export type MediaType = 'video' | 'image';
 export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
 export type VideoStreamVariant = 'optimized' | 'original';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
-export type ProfileOrientation = 'landscape' | 'portrait';
+export type ProfileOrientation = 'landscape' | 'rotate90' | 'rotate180' | 'rotate270';
 
 export interface Video {
     createdAt: string;
