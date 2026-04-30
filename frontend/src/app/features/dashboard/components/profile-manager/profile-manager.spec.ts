@@ -21,6 +21,7 @@ const profile = (partial: Partial<Profile>): Profile => ({
   createdAt: '2026-03-10T00:00:00.000Z',
   id: 'profile-1',
   name: 'Lobby',
+  orientation: 'landscape',
   playerAccessToken: 'player-token',
   slug: 'lobby',
   updatedAt: '2026-03-10T00:00:00.000Z',
@@ -45,6 +46,28 @@ describe('ProfileManager', () => {
       {
         id: undefined,
         name: 'Main Lobby',
+        orientation: 'landscape',
+        videoIds: ['video-1'],
+      },
+    ]);
+  });
+
+  it('uses profile orientation when editing existing profile', () => {
+    const component = new ProfileManager();
+    const emitted: unknown[] = [];
+
+    component.videos = [video({ id: 'video-1' })];
+    component.profiles = [profile({ id: 'profile-2', name: 'Portrait TV', orientation: 'rotate90', videoIds: ['video-1'] })];
+    component.saveProfile.subscribe((payload) => emitted.push(payload));
+
+    component.openEdit(component.profiles[0]);
+    component.save();
+
+    expect(emitted).toEqual([
+      {
+        id: 'profile-2',
+        name: 'Portrait TV',
+        orientation: 'rotate90',
         videoIds: ['video-1'],
       },
     ]);

@@ -2,7 +2,7 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 import { forkJoin, interval, of } from 'rxjs';
 import { catchError, finalize, startWith, switchMap } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ApiService, Profile, Video } from '../../services/api.service';
+import { ApiService, Profile, ProfileOrientation, Video } from '../../services/api.service';
 import { ToastService } from '../../shared/services/toast.service';
 import { getErrorMessage } from '../../shared/utils/error-message';
 import { ResumableUploadService } from './resumable-upload.service';
@@ -10,6 +10,7 @@ import { ResumableUploadService } from './resumable-upload.service';
 export interface SaveProfilePayload {
   id?: string;
   name: string;
+  orientation: ProfileOrientation;
   videoIds: string[];
 }
 
@@ -124,8 +125,8 @@ export class DashboardStore {
 
   saveProfile(payload: SaveProfilePayload) {
     const request = payload.id
-      ? this.api.updateProfile(payload.id, payload.name, payload.videoIds)
-      : this.api.createProfile(payload.name, payload.videoIds);
+      ? this.api.updateProfile(payload.id, payload.name, payload.videoIds, payload.orientation)
+      : this.api.createProfile(payload.name, payload.videoIds, payload.orientation);
 
     request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {

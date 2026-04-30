@@ -27,10 +27,13 @@ export interface Video {
     width?: number;
 }
 
+export type ProfileOrientation = 'landscape' | 'rotate90' | 'rotate180' | 'rotate270';
+
 export interface Profile {
     createdAt: string;
     id: string;
     name: string;
+    orientation: ProfileOrientation;
     playerAccessToken: string;
     slug: string;
     updatedAt: string;
@@ -164,12 +167,12 @@ export class ApiService {
         });
     }
 
-    createProfile(name: string, videoIds: string[]): Observable<any> {
-        return this.http.post(`${this.apiUrl}/profiles`, { name, videoIds });
+    createProfile(name: string, videoIds: string[], orientation: ProfileOrientation): Observable<any> {
+        return this.http.post(`${this.apiUrl}/profiles`, { name, orientation, videoIds });
     }
 
-    updateProfile(id: string, name: string, videoIds: string[]): Observable<any> {
-        return this.http.post(`${this.apiUrl}/profiles`, { id, name, videoIds });
+    updateProfile(id: string, name: string, videoIds: string[], orientation: ProfileOrientation): Observable<any> {
+        return this.http.post(`${this.apiUrl}/profiles`, { id, name, orientation, videoIds });
     }
 
     deleteProfile(id: string): Observable<any> {

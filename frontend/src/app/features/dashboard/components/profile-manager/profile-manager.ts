@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ConfirmModal } from '../../../../shared/ui/confirm-modal/confirm-modal';
-import { Profile, Video } from '../../../../services/api.service';
+import { Profile, ProfileOrientation, Video } from '../../../../services/api.service';
 import { slugify } from '../../../../shared/utils/slugify';
 import { SaveProfilePayload } from '../../dashboard.store';
 
@@ -24,6 +24,13 @@ export class ProfileManager {
   isEditing = false;
   editingId: string | null = null;
   profileName = '';
+  profileOrientation: ProfileOrientation = 'landscape';
+  readonly orientationOptions: Array<{ label: string; value: ProfileOrientation }> = [
+    { label: 'Ngang', value: 'landscape' },
+    { label: 'Xoay 90°', value: 'rotate90' },
+    { label: 'Xoay 180°', value: 'rotate180' },
+    { label: 'Xoay 270°', value: 'rotate270' },
+  ];
   mobileTab: 'library' | 'playlist' = 'library';
   deletingProfileId: string | null = null;
   playlistVideos: Video[] = [];
@@ -36,6 +43,7 @@ export class ProfileManager {
     this.isEditing = true;
     this.editingId = null;
     this.profileName = '';
+    this.profileOrientation = 'landscape';
     this.playlistVideos = [];
     this.formError = '';
   }
@@ -44,6 +52,7 @@ export class ProfileManager {
     this.isEditing = true;
     this.editingId = profile.id;
     this.profileName = profile.name;
+    this.profileOrientation = profile.orientation;
     this.formError = '';
     this.playlistVideos = profile.videoIds
       .map((id) => this.videos.find((video) => video.id === id))
@@ -133,6 +142,7 @@ export class ProfileManager {
     this.saveProfile.emit({
       id: this.editingId || undefined,
       name,
+      orientation: this.profileOrientation,
       videoIds: this.playlistVideos.map((video) => video.id),
     });
     this.isEditing = false;
