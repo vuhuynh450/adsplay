@@ -6,6 +6,7 @@ import express, { Router } from 'express';
 import { getConfig } from '../config';
 import { AppError, asyncHandler } from '../errors';
 import { authenticateToken } from '../middleware/auth';
+import { requirePageAccess } from '../middleware/page-access';
 import {
     createStoredUploadFilename,
     deleteVideo,
@@ -88,6 +89,7 @@ export const videoRouter = Router();
 videoRouter.get(
     '/',
     authenticateToken,
+    requirePageAccess('videos'),
     asyncHandler(async (_req, res) => {
         res.json(await listVideos());
     }),
@@ -96,6 +98,7 @@ videoRouter.get(
 videoRouter.get(
     '/policy',
     authenticateToken,
+    requirePageAccess('videos'),
     asyncHandler(async (_req, res) => {
         res.json(getVideoPolicy());
     }),
@@ -104,6 +107,7 @@ videoRouter.get(
 videoRouter.post(
     '/uploads/sessions',
     authenticateToken,
+    requirePageAccess('videos'),
     asyncHandler(async (req, res) => {
         const originalName = requireNonEmptyString(req.body?.originalName, 'originalName', 255);
         const mimeType = requireNonEmptyString(req.body?.mimeType, 'mimeType', 255);

@@ -10,6 +10,7 @@ import { playerDeviceRouter } from './routes/player-device.routes';
 import { profileRouter } from './routes/profile.routes';
 import { systemRouter } from './routes/system.routes';
 import { videoRouter } from './routes/video.routes';
+import { employeesRouter } from './routes/employees.routes';
 
 export const createApp = () => {
     const config = getConfig();
@@ -33,6 +34,7 @@ export const createApp = () => {
     app.use('/api/videos', videoRouter);
     app.use('/api/profiles', profileRouter);
     app.use('/api/system', systemRouter);
+    app.use('/api/employees', employeesRouter);
 
     app.use(
         '/uploads',

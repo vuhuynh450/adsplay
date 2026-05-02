@@ -189,6 +189,62 @@ test('first login password change clears mustChangePassword flag', async () => {
   assert.equal(loginAgainResponse.body.user.mustChangePassword, false);
 });
 
+test('staff without profiles page permission cannot access /api/profiles', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('staff123', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_no_profiles',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['videos'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_no_profiles',
+    password: 'staff123',
+  });
+
+  assert.equal(loginResponse.status, 200);
+
+  const response = await request(app)
+    .get('/api/profiles')
+    .set('Authorization', `Bearer ${loginResponse.body.token}`);
+
+  assert.equal(response.status, 403);
+  assert.equal(response.body.error.code, 'PAGE_FORBIDDEN');
+});
+
+test('staff cannot access employees endpoints', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('staff-employees-123', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_no_employees',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['videos', 'profiles', 'devices', 'system'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_no_employees',
+    password: 'staff-employees-123',
+  });
+
+  assert.equal(loginResponse.status, 200);
+
+  const response = await request(app)
+    .get('/api/employees')
+    .set('Authorization', `Bearer ${loginResponse.body.token}`);
+
+  assert.equal(response.status, 403);
+  assert.equal(response.body.error.code, 'ADMIN_ONLY');
+});
+
 test('auth and system status flow works', async () => {
   const { authHeader, token } = await loginAsAdmin();
 

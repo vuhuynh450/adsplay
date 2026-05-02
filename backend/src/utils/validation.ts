@@ -1,3 +1,4 @@
+import { PAGE_KEYS, type PageKey } from '../constants/page-access';
 import { AppError } from '../errors';
 
 export const requireNonEmptyString = (
@@ -51,4 +52,26 @@ export const requireOptionalOrientation = (value: unknown, field: string) => {
     }
 
     throw new AppError(400, 'VALIDATION_ERROR', `${field} must be one of: landscape, rotate90, rotate180, rotate270.`);
+};
+
+export const requireAllowedPages = (value: unknown, field: string): PageKey[] => {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+        throw new AppError(400, 'VALIDATION_ERROR', `${field} must be an array of strings.`);
+    }
+
+    const deduped = [...new Set(value.map((item) => item.trim()))].filter(Boolean);
+    if (!deduped.length) {
+        throw new AppError(400, 'VALIDATION_ERROR', `${field} is required.`);
+    }
+
+    const invalid = deduped.find((item) => !PAGE_KEYS.includes(item as PageKey));
+    if (invalid) {
+        throw new AppError(
+            400,
+            'VALIDATION_ERROR',
+            `${field} contains invalid page key: ${invalid}. Allowed values: ${PAGE_KEYS.join(', ')}.`,
+        );
+    }
+
+    return deduped as PageKey[];
 };

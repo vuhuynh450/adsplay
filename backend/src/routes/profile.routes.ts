@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../errors';
 import { authenticateToken, authenticateTokenIfPresent, type AuthenticatedRequest } from '../middleware/auth';
+import { requirePageAccess } from '../middleware/page-access';
 import {
     getDetailedProfileById,
     getDetailedProfileBySlug,
@@ -23,6 +24,7 @@ export const profileRouter = Router();
 profileRouter.get(
     '/',
     authenticateTokenIfPresent,
+    requirePageAccess('profiles'),
     asyncHandler(async (_req, res) => {
         const req = _req as AuthenticatedRequest;
         const isAdminRequest = Boolean(req.user);
@@ -61,6 +63,7 @@ profileRouter.post(
 profileRouter.get(
     '/:id',
     authenticateToken,
+    requirePageAccess('profiles'),
     asyncHandler(async (req, res) => {
         const profile = await getDetailedProfileById(requireNonEmptyString(req.params.id, 'id'));
         res.setHeader('Cache-Control', 'private, no-store');
@@ -71,6 +74,7 @@ profileRouter.get(
 profileRouter.post(
     '/',
     authenticateToken,
+    requirePageAccess('profiles'),
     asyncHandler(async (req, res) => {
         const name = requireNonEmptyString(req.body?.name, 'name');
         const videoIds = requireStringArray(req.body?.videoIds, 'videoIds');
@@ -85,6 +89,7 @@ profileRouter.post(
 profileRouter.delete(
     '/:id',
     authenticateToken,
+    requirePageAccess('profiles'),
     asyncHandler(async (req, res) => {
         await removeProfile(requireNonEmptyString(req.params.id, 'id'));
         res.json({ success: true });
@@ -94,6 +99,7 @@ profileRouter.delete(
 profileRouter.post(
     '/:id/heartbeat',
     authenticateToken,
+    requirePageAccess('profiles'),
     asyncHandler(async (req, res) => {
         await markProfileHeartbeat(requireNonEmptyString(req.params.id, 'id'));
         res.json({ success: true });
