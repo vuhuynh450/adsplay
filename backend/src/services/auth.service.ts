@@ -4,12 +4,23 @@ import { getConfig } from '../config';
 import { AppError } from '../errors';
 import { dbRepository } from '../db';
 import { slugify } from '../utils/slugify';
+import type { PageKey } from '../types';
 
 const config = getConfig();
 
+export interface AdminAuthUserView {
+    id: string;
+    username: string;
+    role: 'admin' | 'staff';
+    allowedPages: PageKey[];
+    mustChangePassword: boolean;
+}
+
 export interface AdminTokenPayload extends jwt.JwtPayload {
     tokenType: 'admin';
+    userId: string;
     username: string;
+    role: 'admin' | 'staff';
 }
 
 export interface ProfileHeartbeatTokenPayload extends jwt.JwtPayload {
@@ -35,7 +46,9 @@ const verifySignedToken = (token: string) => {
 const isAdminTokenPayload = (payload: string | jwt.JwtPayload): payload is AdminTokenPayload =>
     typeof payload !== 'string' &&
     payload.tokenType === 'admin' &&
-    typeof payload.username === 'string';
+    typeof payload.userId === 'string' &&
+    typeof payload.username === 'string' &&
+    (payload.role === 'admin' || payload.role === 'staff');
 
 const isProfileHeartbeatTokenPayload = (
     payload: string | jwt.JwtPayload,
@@ -55,17 +68,49 @@ export const login = async (username: string, password: string) => {
     const dbUser = await dbRepository.findUserByUsername(username);
 
     let isValid = false;
+    let user: AdminAuthUserView | null = null;
+
     if (dbUser) {
         isValid = await bcrypt.compare(password, dbUser.passwordHash);
+        if (isValid) {
+            if (!dbUser.isActive) {
+                throw new AppError(403, 'ACCOUNT_INACTIVE', 'Account is inactive.');
+            }
+            user = {
+                id: dbUser.id,
+                username: dbUser.username,
+                role: dbUser.role,
+                allowedPages: dbUser.allowedPages,
+                mustChangePassword: dbUser.mustChangePassword,
+            };
+        }
     } else if (username === config.adminUsername && password === config.adminPassword) {
         isValid = true;
+        user = {
+            id: 'default-admin',
+            username: config.adminUsername,
+            role: 'admin',
+            allowedPages: ['videos', 'profiles', 'devices', 'system', 'employees'],
+            mustChangePassword: false,
+        };
     }
 
-    if (!isValid) {
+    if (!isValid || !user) {
         throw new AppError(401, 'INVALID_CREDENTIALS', 'Invalid credentials.');
     }
 
-    return jwt.sign({ tokenType: 'admin', username }, config.jwtSecret, { expiresIn: '24h' });
+    const token = jwt.sign(
+        {
+            tokenType: 'admin',
+            userId: user.id,
+            username: user.username,
+            role: user.role,
+        },
+        config.jwtSecret,
+        { expiresIn: '24h' }
+    );
+
+    return { token, user };
 };
 
 export const verifyAdminToken = (token: string) => {

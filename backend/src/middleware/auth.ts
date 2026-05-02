@@ -2,9 +2,18 @@ import type { NextFunction, Request, Response } from 'express';
 import { AppError } from '../errors';
 import type { AdminTokenPayload } from '../services/auth.service';
 import { verifyAdminToken } from '../services/auth.service';
+import { dbRepository } from '../db';
+import type { PageKey } from '../types';
 
 export interface AuthenticatedRequest extends Request {
-    user?: AdminTokenPayload;
+    user?: {
+        id: string;
+        username: string;
+        role: 'admin' | 'staff';
+        isActive: boolean;
+        mustChangePassword: boolean;
+        allowedPages: PageKey[];
+    };
 }
 
 const readBearerToken = (req: Request) => {
@@ -21,11 +30,32 @@ const readBearerToken = (req: Request) => {
     return token;
 };
 
-const assignVerifiedUser = (req: AuthenticatedRequest, token: string) => {
-    req.user = verifyAdminToken(token);
+const assignVerifiedUser = async (req: AuthenticatedRequest, token: string) => {
+    const payload = verifyAdminToken(token);
+
+    const dbUser = await dbRepository.findUserByUsername(payload.username);
+    if (dbUser) {
+        req.user = {
+            id: dbUser.id,
+            username: dbUser.username,
+            role: dbUser.role,
+            isActive: dbUser.isActive,
+            mustChangePassword: dbUser.mustChangePassword,
+            allowedPages: dbUser.allowedPages,
+        };
+    } else {
+        req.user = {
+            id: payload.userId,
+            username: payload.username,
+            role: payload.role,
+            isActive: true,
+            mustChangePassword: false,
+            allowedPages: ['videos', 'profiles', 'devices', 'system', 'employees'],
+        };
+    }
 };
 
-export const authenticateToken = (
+export const authenticateToken = async (
     req: AuthenticatedRequest,
     _res: Response,
     next: NextFunction,
@@ -45,14 +75,14 @@ export const authenticateToken = (
     }
 
     try {
-        assignVerifiedUser(req, token);
+        await assignVerifiedUser(req, token);
         next();
     } catch (error) {
         next(error);
     }
 };
 
-export const authenticateTokenIfPresent = (
+export const authenticateTokenIfPresent = async (
     req: AuthenticatedRequest,
     _res: Response,
     next: NextFunction,
@@ -72,7 +102,7 @@ export const authenticateTokenIfPresent = (
     }
 
     try {
-        assignVerifiedUser(req, token);
+        await assignVerifiedUser(req, token);
         next();
     } catch (error) {
         next(error);

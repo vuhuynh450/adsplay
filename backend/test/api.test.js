@@ -130,6 +130,28 @@ test('login response includes user role + page metadata', async () => {
   assert.ok(Array.isArray(response.body.user.allowedPages));
 });
 
+test('inactive staff login returns ACCOUNT_INACTIVE', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('123456', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_inactive',
+    passwordHash,
+    role: 'staff',
+    isActive: false,
+    mustChangePassword: false,
+    allowedPages: ['videos'],
+  });
+
+  const response = await request(app).post('/api/auth/login').send({
+    username: 'staff_inactive',
+    password: '123456',
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal(response.body.error.code, 'ACCOUNT_INACTIVE');
+});
+
 test('auth and system status flow works', async () => {
   const { authHeader, token } = await loginAsAdmin();
 

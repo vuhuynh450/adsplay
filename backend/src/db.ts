@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'fs-extra';
 import { getConfig } from './config';
-import type { DatabaseSchema, Device, Profile, ProfileOrientation, User, Video } from './types';
+import type { DatabaseSchema, Device, PageKey, Profile, ProfileOrientation, User, UserRole, Video } from './types';
 import { slugify } from './utils/slugify';
 
 const config = getConfig();
@@ -262,6 +262,26 @@ export const dbRepository = {
     },
     async findUserByUsername(username: string) {
         return dbCache.users.find((user) => user.username === username) || null;
+    },
+    async createUser(input: { username: string; passwordHash: string; role: UserRole; isActive: boolean; mustChangePassword: boolean; allowedPages: PageKey[] }) {
+        const now = new Date().toISOString();
+        const newUser = normalizeUser({
+            id: createEntityId(),
+            username: input.username,
+            passwordHash: input.passwordHash,
+            role: input.role,
+            isActive: input.isActive,
+            mustChangePassword: input.mustChangePassword,
+            allowedPages: input.allowedPages,
+            createdAt: now,
+            updatedAt: now,
+        });
+
+        await mutate((db) => {
+            db.users.push(newUser);
+        });
+
+        return { ...newUser };
     },
     async findVideoById(id: string) {
         return dbCache.videos.find((video) => video.id === id) || null;
