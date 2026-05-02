@@ -916,3 +916,88 @@ test('poster and HLS asset routes serve generated media artifacts when metadata 
   assert.equal(segmentResponse.status, 200);
   assert.equal(segmentResponse.headers['content-type'], 'video/mp2t');
 });
+
+test('staff with videos permission can access /api/videos but cannot access /api/system', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('staff-videos-only', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_videos_only',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['videos'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_videos_only',
+    password: 'staff-videos-only',
+  });
+
+  assert.equal(loginResponse.status, 200);
+  const token = `Bearer ${loginResponse.body.token}`;
+
+  const videosResponse = await request(app)
+    .get('/api/videos')
+    .set('Authorization', token);
+
+  assert.equal(videosResponse.status, 200);
+  assert.ok(Array.isArray(videosResponse.body));
+
+  const systemResponse = await request(app)
+    .get('/api/system/status')
+    .set('Authorization', token);
+
+  assert.equal(systemResponse.status, 403);
+  assert.equal(systemResponse.body.error.code, 'PAGE_FORBIDDEN');
+});
+
+test('locked staff is blocked on next request even with valid token', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('locked123', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_locked',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['videos'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_locked',
+    password: 'locked123',
+  });
+
+  assert.equal(loginResponse.status, 200);
+  const token = `Bearer ${loginResponse.body.token}`;
+
+  // Initially can access videos
+  const initialResponse = await request(app)
+    .get('/api/videos')
+    .set('Authorization', token);
+
+  assert.equal(initialResponse.status, 200);
+
+  // Lock the user account
+  const adminLogin = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'admin',
+  });
+
+  const employeeId = loginResponse.body.user.id;
+  await request(app)
+    .patch(`/api/employees/${employeeId}/active`)
+    .set('Authorization', `Bearer ${adminLogin.body.token}`)
+    .send({ isActive: false });
+
+  // Locked staff is now blocked
+  const blockedResponse = await request(app)
+    .get('/api/videos')
+    .set('Authorization', token);
+
+  assert.equal(blockedResponse.status, 403);
+  assert.equal(blockedResponse.body.error.code, 'ACCOUNT_INACTIVE');
+});
