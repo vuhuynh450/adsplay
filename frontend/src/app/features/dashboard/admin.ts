@@ -1,5 +1,6 @@
 import { Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { ApiService, Video } from '../../services/api.service';
 import { ThemeToggle } from '../../shared/ui/theme-toggle/theme-toggle';
@@ -14,12 +15,27 @@ import {
 } from './components/device-manager/device-manager';
 import { ConfirmModal } from '../../shared/ui/confirm-modal/confirm-modal';
 import { DashboardStore, SaveProfilePayload } from './dashboard.store';
+import type { PageKey } from '../../constants/page-access';
 
-type AdminTab = 'videos' | 'profiles' | 'devices';
+type AdminPage = 'videos' | 'profiles' | 'devices' | 'system';
+
+interface MenuItem {
+  key: AdminPage;
+  label: string;
+  route: string;
+  description: string;
+}
+
+const ADMIN_MENU_ITEMS: MenuItem[] = [
+  { key: 'videos', label: 'Kho Nội Dung', route: '/admin/videos', description: 'Quản lý và tải lên video hoặc hình ảnh' },
+  { key: 'profiles', label: 'Quản Lý Màn Hình', route: '/admin/profiles', description: 'Cấu hình màn hình phát' },
+  { key: 'devices', label: 'Thiết Bị TV', route: '/admin/devices', description: 'Gán TV vào màn hình phát' },
+  { key: 'system', label: 'Hệ Thống', route: '/admin/system', description: 'Thông tin và trạng thái hệ thống' },
+];
 
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal],
+  imports: [CommonModule, RouterModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal],
   providers: [DashboardStore],
   templateUrl: './admin.html',
   styleUrl: './admin.css',
@@ -27,7 +43,9 @@ type AdminTab = 'videos' | 'profiles' | 'devices';
 export class Admin implements OnInit {
   readonly store = inject(DashboardStore);
   private readonly authService = inject(AuthService);
-  private readonly api = inject(ApiService);
+  readonly api = inject(ApiService);
+  private readonly route = inject(ActivatedRoute);
+
   readonly playerUrl = computed(() => {
     if (typeof window === 'undefined') {
       return '';
@@ -42,13 +60,26 @@ export class Admin implements OnInit {
     return `${url.origin}/device`;
   });
 
-  private readonly activeTabStorageKey = 'adsplay-admin-active-tab';
-
-  activeTab: AdminTab = 'videos';
+  activeTab = signal<AdminPage>('videos');
   isMobileMenuOpen = signal(false);
   videoDeletingId = signal<string | null>(null);
   previewingVideo = signal<Video | null>(null);
   copySuccess = signal(false);
+
+  readonly menuItems = ADMIN_MENU_ITEMS;
+  readonly visibleMenus = computed(() =>
+    this.menuItems.filter((item) => this.authService.hasPageAccess(item.key as PageKey))
+  );
+
+  readonly pageLabel = computed(() => {
+    const item = this.menuItems.find((m) => m.key === this.activeTab());
+    return item?.label ?? '';
+  });
+
+  readonly pageDescription = computed(() => {
+    const item = this.menuItems.find((m) => m.key === this.activeTab());
+    return item?.description ?? '';
+  });
 
   @HostListener('window:beforeunload', ['$event'])
   unloadNotification($event: BeforeUnloadEvent) {
@@ -59,23 +90,14 @@ export class Admin implements OnInit {
   }
 
   ngOnInit() {
-    this.activeTab = this.getPersistedActiveTab();
+    this.route.data.subscribe((data) => {
+      const key = data['pageKey'] as AdminPage;
+      if (key) {
+        this.activeTab.set(key);
+      }
+    });
+
     this.store.initialize();
-  }
-
-  setActiveTab(tab: AdminTab) {
-    this.activeTab = tab;
-    this.isMobileMenuOpen.set(false);
-
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(this.activeTabStorageKey, tab);
-    } catch {
-      return;
-    }
   }
 
   onLogout() {
@@ -209,23 +231,6 @@ export class Admin implements OnInit {
   formatPreviewUploadedAt() {
     const video = this.previewingVideo();
     return video ? new Date(video.uploadedAt).toLocaleString() : '';
-  }
-
-  private getPersistedActiveTab(): AdminTab {
-    if (typeof window === 'undefined') {
-      return 'videos';
-    }
-
-    try {
-      const persistedTab = window.localStorage.getItem(this.activeTabStorageKey);
-      if (persistedTab === 'videos' || persistedTab === 'profiles' || persistedTab === 'devices') {
-        return persistedTab;
-      }
-    } catch {
-      return 'videos';
-    }
-
-    return 'videos';
   }
 
   private fallbackCopyTextToClipboard(text: string) {

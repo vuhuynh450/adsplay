@@ -3,6 +3,7 @@ import { Admin } from './features/dashboard/admin';
 import { Employees } from './features/dashboard/employees/employees';
 import { Player } from './features/player/player';
 import { Login } from './features/auth/login/login';
+import { FirstLoginPassword } from './features/auth/first-login-password/first-login-password';
 import { authGuard } from './services/auth.guard';
 import { firstLoginGuard } from './services/first-login.guard';
 import { pageAccessGuard } from './services/page-access.guard';
@@ -10,6 +11,7 @@ import { adminOnlyGuard } from './services/admin-only.guard';
 
 export const routes: Routes = [
     { path: 'login', component: Login },
+    { path: 'auth/change-password-first-login', component: FirstLoginPassword },
     {
         path: 'admin/videos',
         component: Admin,

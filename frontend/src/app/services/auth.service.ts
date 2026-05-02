@@ -85,6 +85,10 @@ export class AuthService {
         return '/admin';
     }
 
+    setAuthenticatedSession(token: string, user: AuthLoginUser) {
+        this.setSession(token, user);
+    }
+
     updateSessionUser(user: AuthLoginUser) {
         const token = this.getToken();
         if (!token) {
