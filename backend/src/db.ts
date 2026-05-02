@@ -1,12 +1,13 @@
 import crypto from 'node:crypto';
 import fs from 'fs-extra';
 import { getConfig } from './config';
-import type { DatabaseSchema, Profile, User, Video } from './types';
+import type { DatabaseSchema, Device, Profile, ProfileOrientation, User, Video } from './types';
 import { slugify } from './utils/slugify';
 
 const config = getConfig();
 
 const initialData: DatabaseSchema = {
+    devices: [],
     profiles: [],
     users: [],
     videos: [],
@@ -43,6 +44,8 @@ const normalizeVideo = (video: Partial<Video>): Video => {
         sourceMimeType: video.sourceMimeType || video.mimeType,
         sourceSize: video.sourceSize || video.size || 0,
         size: video.size || 0,
+        storageProvider: video.storageProvider || 'local',
+        r2ObjectKey: video.r2ObjectKey,
         streamVariant: video.streamVariant || 'original',
         updatedAt: video.updatedAt || timestamp,
         uploadedAt: video.uploadedAt || timestamp,
@@ -50,7 +53,7 @@ const normalizeVideo = (video: Partial<Video>): Video => {
     };
 };
 
-const validProfileOrientations: Profile['orientation'][] = [
+const validProfileOrientations: ProfileOrientation[] = [
     'landscape',
     'rotate90',
     'rotate180',
@@ -59,8 +62,9 @@ const validProfileOrientations: Profile['orientation'][] = [
 
 const normalizeProfile = (profile: Partial<Profile>): Profile => {
     const timestamp = profile.updatedAt || profile.createdAt || new Date().toISOString();
-    const orientation = validProfileOrientations.includes(profile.orientation as Profile['orientation'])
-        ? (profile.orientation as Profile['orientation'])
+    const rawOrientation = profile.orientation;
+    const orientation = validProfileOrientations.includes(rawOrientation as ProfileOrientation)
+        ? (rawOrientation as ProfileOrientation)
         : 'landscape';
 
     return {
@@ -74,9 +78,40 @@ const normalizeProfile = (profile: Partial<Profile>): Profile => {
     };
 };
 
+const normalizeDevice = (device: Partial<Device> & { profileId?: string }): Device => {
+    const timestamp = device.updatedAt || device.createdAt || new Date().toISOString();
+
+    return {
+        assignedProfileId: device.assignedProfileId || device.profileId,
+        createdAt: device.createdAt || timestamp,
+        deviceCode: device.deviceCode || '',
+        id: device.id || createEntityId(),
+        lastSeen: device.lastSeen,
+        name: device.name || 'TV Device',
+        secretHash: device.secretHash || '',
+        updatedAt: device.updatedAt || timestamp,
+    };
+};
+
+const normalizeUser = (user: Partial<User>): User => {
+    const now = user.updatedAt || user.createdAt || new Date().toISOString();
+    return {
+        id: user.id || createEntityId(),
+        username: user.username || '',
+        passwordHash: user.passwordHash || '',
+        role: user.role === 'staff' ? 'staff' : 'admin',
+        isActive: user.isActive !== false,
+        mustChangePassword: Boolean(user.mustChangePassword),
+        allowedPages: Array.isArray(user.allowedPages) ? [...new Set(user.allowedPages)] : ['videos', 'profiles', 'devices', 'system', 'employees'],
+        createdAt: user.createdAt || now,
+        updatedAt: user.updatedAt || now,
+    };
+};
+
 const normalizeDb = (db: Partial<DatabaseSchema>): DatabaseSchema => ({
+    devices: (db.devices || []).map(normalizeDevice),
     profiles: (db.profiles || []).map(normalizeProfile),
-    users: (db.users || []).map((user: User) => user),
+    users: (db.users || []).map(normalizeUser),
     videos: (db.videos || []).map(normalizeVideo),
 });
 
@@ -101,11 +136,124 @@ const mutate = async (updater: (db: DatabaseSchema) => void) => {
     updater(dbCache);
     dbCache.videos = dbCache.videos.map(normalizeVideo);
     dbCache.profiles = dbCache.profiles.map(normalizeProfile);
+    dbCache.devices = dbCache.devices.map(normalizeDevice);
+    dbCache.users = dbCache.users.map(normalizeUser);
     await queueWrite();
     return dbCache;
 };
 
+let forceNextDeviceCodeConflictForTests = false;
+
+export const __forceNextCreateDeviceCodeConflictForTests = () => {
+    forceNextDeviceCodeConflictForTests = true;
+};
+
 export const dbRepository = {
+    async createDevice(input: { name: string; secretHash: string; deviceCode: string; id?: string }) {
+        const now = new Date().toISOString();
+        const newDevice = normalizeDevice({
+            assignedProfileId: undefined,
+            createdAt: now,
+            deviceCode: input.deviceCode,
+            id: input.id || createEntityId(),
+            name: input.name,
+            secretHash: input.secretHash,
+            updatedAt: now,
+        });
+
+        await mutate((db) => {
+            if (forceNextDeviceCodeConflictForTests) {
+                forceNextDeviceCodeConflictForTests = false;
+                throw new Error('DEVICE_CODE_CONFLICT');
+            }
+
+            const duplicate = db.devices.find((device) => device.deviceCode === newDevice.deviceCode);
+            if (duplicate) {
+                throw new Error('DEVICE_CODE_CONFLICT');
+            }
+            db.devices.push(newDevice);
+        });
+
+        return { ...newDevice };
+    },
+    async listDevices() {
+        return dbCache.devices.map((device) => ({ ...device }));
+    },
+    async findDeviceById(id: string) {
+        return dbCache.devices.find((device) => device.id === id) || null;
+    },
+    async findDeviceByCode(deviceCode: string) {
+        return dbCache.devices.find((device) => device.deviceCode === deviceCode) || null;
+    },
+    async updateDeviceName(id: string, name: string) {
+        let updatedDevice: Device | null = null;
+        await mutate((db) => {
+            const target = db.devices.find((device) => device.id === id);
+            if (!target) {
+                return;
+            }
+
+            target.name = name;
+            target.updatedAt = new Date().toISOString();
+            updatedDevice = { ...target };
+        });
+        return updatedDevice;
+    },
+    async assignProfileToDevice(deviceId: string, profileId?: string) {
+        let updatedDevice: Device | null = null;
+        await mutate((db) => {
+            const target = db.devices.find((device) => device.id === deviceId);
+            if (!target) {
+                return;
+            }
+
+            target.assignedProfileId = profileId;
+            target.updatedAt = new Date().toISOString();
+            updatedDevice = { ...target };
+        });
+        return updatedDevice;
+    },
+    async updateDeviceSecretHash(id: string, secretHash: string): Promise<Device | null> {
+        let updatedDevice: Device | null = null;
+        await mutate((db) => {
+            const target = db.devices.find((device) => device.id === id);
+            if (!target) {
+                return;
+            }
+
+            target.secretHash = secretHash;
+            target.updatedAt = new Date().toISOString();
+            updatedDevice = { ...target };
+        });
+        return updatedDevice;
+    },
+    async touchDevice(id: string, heartbeatAt: string) {
+        let updatedDevice: Device | null = null;
+        await mutate((db) => {
+            const target = db.devices.find((device) => device.id === id);
+            if (!target) {
+                return;
+            }
+
+            target.lastSeen = heartbeatAt;
+            target.updatedAt = heartbeatAt;
+            updatedDevice = { ...target };
+        });
+        return updatedDevice;
+    },
+    async deleteDevice(id: string) {
+        let deleted = false;
+        await mutate((db) => {
+            const index = db.devices.findIndex((device) => device.id === id);
+            if (index === -1) {
+                return;
+            }
+
+            db.devices.splice(index, 1);
+            deleted = true;
+        });
+        return deleted;
+    },
     async findProfileById(id: string) {
         return dbCache.profiles.find((profile) => profile.id === id) || null;
     },
@@ -138,12 +286,7 @@ export const dbRepository = {
             profile.updatedAt = heartbeatAt;
         });
     },
-    async upsertProfile(input: {
-        id?: string;
-        name: string;
-        orientation?: Profile['orientation'];
-        videoIds: string[];
-    }) {
+    async upsertProfile(input: { id?: string; name: string; orientation: ProfileOrientation; videoIds: string[] }) {
         const now = new Date().toISOString();
 
         await mutate((db) => {
@@ -151,7 +294,7 @@ export const dbRepository = {
                 const existing = db.profiles.find((profile) => profile.id === input.id);
                 if (existing) {
                     existing.name = input.name;
-                    existing.orientation = input.orientation || existing.orientation || 'landscape';
+                    existing.orientation = input.orientation;
                     existing.videoIds = [...new Set(input.videoIds)];
                     existing.updatedAt = now;
                     return;
@@ -163,7 +306,7 @@ export const dbRepository = {
                     createdAt: now,
                     id: createEntityId(),
                     name: input.name,
-                    orientation: input.orientation || 'landscape',
+                    orientation: input.orientation,
                     updatedAt: now,
                     videoIds: input.videoIds,
                 }),
@@ -203,6 +346,11 @@ export const dbRepository = {
         await mutate((db) => {
             const before = db.profiles.length;
             db.profiles = db.profiles.filter((profile) => profile.id !== id);
+            db.devices = db.devices.map((device) =>
+                device.assignedProfileId === id
+                    ? { ...device, assignedProfileId: undefined, updatedAt: new Date().toISOString() }
+                    : device,
+            );
             deleted = db.profiles.length !== before;
         });
         return deleted;

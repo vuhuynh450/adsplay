@@ -11,6 +11,7 @@ import type { Video } from '../types';
 
 const config = getConfig();
 const execFileAsync = promisify(execFile);
+const FFMPEG_ERROR_BUFFER_LIMIT = 8192;
 const queue: string[] = [];
 let isProcessing = false;
 
@@ -27,48 +28,6 @@ interface FfprobeOutput {
     streams?: FfprobeStream[];
 }
 
-// Conservative output for old TV browsers: baseline H.264, AAC-LC stereo,
-// smaller frame size, and faststart so playback can begin without a full download.
-const LEGACY_MP4_SCALE_FILTER = 'scale=w=854:h=480:force_original_aspect_ratio=decrease';
-const LEGACY_MP4_VIDEO_ARGS = [
-    '-preset',
-    'veryfast',
-    '-crf',
-    '25',
-    '-maxrate',
-    '1500k',
-    '-bufsize',
-    '3000k',
-    '-vf',
-    LEGACY_MP4_SCALE_FILTER,
-    '-pix_fmt',
-    'yuv420p',
-    '-profile:v',
-    'baseline',
-    '-level',
-    '3.0',
-    '-g',
-    '60',
-    '-keyint_min',
-    '60',
-    '-sc_threshold',
-    '0',
-    '-c:v',
-    'libx264',
-] as const;
-const LEGACY_MP4_AUDIO_ARGS = [
-    '-c:a',
-    'aac',
-    '-profile:a',
-    'aac_low',
-    '-ac',
-    '2',
-    '-ar',
-    '44100',
-    '-b:a',
-    '96k',
-] as const;
-
 const getRequiredBinary = (binaryPath: string | null | undefined, toolName: string) => {
     if (!binaryPath) {
         throw new Error(`${toolName} binary is not available.`);
@@ -76,6 +35,9 @@ const getRequiredBinary = (binaryPath: string | null | undefined, toolName: stri
 
     return binaryPath;
 };
+
+const appendProcessErrorChunk = (stderr: string, chunk: Buffer | string) =>
+    (stderr + chunk.toString()).slice(-FFMPEG_ERROR_BUFFER_LIMIT);
 
 const probe = async (inputPath: string): Promise<Partial<Video>> => {
     const ffprobePath = getRequiredBinary(ffprobeStatic.path, 'ffprobe');
@@ -99,44 +61,6 @@ const probe = async (inputPath: string): Promise<Partial<Video>> => {
         width: videoStream?.width,
     };
 };
-
-const transcodeToOptimizedMp4 = async (sourcePath: string, outputPath: string) => {
-    const ffmpegBinary = getRequiredBinary(ffmpegPath, 'ffmpeg');
-
-    await new Promise<void>((resolve, reject) => {
-        const process = spawn(ffmpegBinary, [
-            '-y',
-            '-i',
-            sourcePath,
-            '-movflags',
-            '+faststart',
-            ...LEGACY_MP4_VIDEO_ARGS,
-            ...LEGACY_MP4_AUDIO_ARGS,
-            '-f',
-            'mp4',
-            outputPath,
-        ]);
-
-        let stderr = '';
-
-        process.stderr.on('data', (chunk: Buffer | string) => {
-            stderr += chunk.toString();
-        });
-
-        process.on('error', reject);
-        process.on('close', (code) => {
-            if (code === 0) {
-                resolve();
-                return;
-            }
-
-            reject(new Error(stderr.trim() || `ffmpeg exited with code ${code}`));
-        });
-    });
-};
-
-const ensureUniqueProcessedPath = (videoId: string) =>
-    path.join(config.processedUploadsDir, `${videoId}-optimized.mp4`);
 
 const ensurePosterPath = (videoId: string) =>
     path.join(config.processedUploadsDir, 'posters', `${videoId}.jpg`);
@@ -168,7 +92,7 @@ const createPoster = async (sourcePath: string, outputPath: string) => {
         let stderr = '';
 
         process.stderr.on('data', (chunk: Buffer | string) => {
-            stderr += chunk.toString();
+            stderr = appendProcessErrorChunk(stderr, chunk);
         });
 
         process.on('error', reject);
@@ -231,7 +155,7 @@ const transcodeToHls = async (sourcePath: string, outputDir: string) => {
         let stderr = '';
 
         process.stderr.on('data', (chunk: Buffer | string) => {
-            stderr += chunk.toString();
+            stderr = appendProcessErrorChunk(stderr, chunk);
         });
 
         process.on('error', reject);
@@ -268,39 +192,15 @@ const processNext = async () => {
         });
 
         const sourcePath = path.join(config.uploadsDir, video.sourceFilename);
-        const optimizedFilename = path.basename(ensureUniqueProcessedPath(video.id));
-        const optimizedPath = path.join(config.processedUploadsDir, optimizedFilename);
-
-        await transcodeToOptimizedMp4(sourcePath, optimizedPath);
-
-        const [sourceStats, optimizedStats, mediaMetadata] = await Promise.all([
+        const [sourceStats, mediaMetadata] = await Promise.all([
             fs.stat(sourcePath),
-            fs.stat(optimizedPath),
-            probe(optimizedPath),
+            probe(sourcePath),
         ]);
-
-        let selectedStreamPath = sourcePath;
-        let selectedMimeType = video.sourceMimeType || video.mimeType || 'video/mp4';
-        let selectedSize = sourceStats.size;
-        let selectedStreamVariant: Video['streamVariant'] = 'original';
-
-        if (optimizedStats.size >= sourceStats.size) {
-            await fs.remove(optimizedPath);
-            selectedStreamPath = sourcePath;
-            selectedMimeType = video.sourceMimeType || video.mimeType || 'video/mp4';
-            selectedSize = sourceStats.size;
-            selectedStreamVariant = 'original';
-        } else {
-            selectedStreamPath = optimizedPath;
-            selectedMimeType = 'video/mp4';
-            selectedSize = optimizedStats.size;
-            selectedStreamVariant = 'optimized';
-        }
 
         const posterPath = ensurePosterPath(video.id);
         let posterFilename: string | undefined;
         try {
-            await createPoster(selectedStreamPath, posterPath);
+            await createPoster(sourcePath, posterPath);
             posterFilename = toUploadsRelativePath(posterPath);
         } catch (error) {
             await fs.remove(posterPath);
@@ -313,7 +213,7 @@ const processNext = async () => {
         const hlsDir = ensureHlsDir(video.id);
         let hlsManifestPath: string | undefined;
         try {
-            const playlistPath = await transcodeToHls(selectedStreamPath, hlsDir);
+            const playlistPath = await transcodeToHls(sourcePath, hlsDir);
             hlsManifestPath = toUploadsRelativePath(playlistPath);
         } catch (error) {
             await fs.remove(hlsDir);
@@ -324,31 +224,22 @@ const processNext = async () => {
         }
 
         await dbRepository.updateVideo(videoId, (draft) => {
-            if (selectedStreamVariant === 'optimized') {
-                draft.filename = path.join('processed', optimizedFilename);
-                draft.mimeType = selectedMimeType;
-                draft.processingError = undefined;
-                draft.size = selectedSize;
-                draft.streamVariant = selectedStreamVariant;
-                draft.durationSeconds = mediaMetadata.durationSeconds;
-                draft.height = mediaMetadata.height;
-                draft.width = mediaMetadata.width;
-            } else {
-                draft.processingError = 'Giữ lại bản gốc vì file tối ưu không nhỏ hơn.';
-                draft.streamVariant = selectedStreamVariant;
-                draft.durationSeconds = mediaMetadata.durationSeconds || draft.durationSeconds;
-                draft.height = mediaMetadata.height || draft.height;
-                draft.width = mediaMetadata.width || draft.width;
-            }
-
+            draft.filename = video.sourceFilename;
+            draft.mimeType = video.sourceMimeType || video.mimeType || 'video/mp4';
+            draft.processingError = undefined;
+            draft.size = sourceStats.size;
+            draft.streamVariant = 'original';
+            draft.durationSeconds = mediaMetadata.durationSeconds || draft.durationSeconds;
+            draft.height = mediaMetadata.height || draft.height;
+            draft.width = mediaMetadata.width || draft.width;
             draft.hlsManifestPath = hlsManifestPath;
             draft.posterFilename = posterFilename;
             draft.processingStatus = 'ready';
         });
 
-        logInfo('media.optimized', { videoId });
+        logInfo('media.processed', { videoId });
     } catch (error) {
-        logError('media.optimize_failed', {
+        logError('media.process_failed', {
             error: error instanceof Error ? error.message : String(error),
             videoId,
         });
@@ -358,7 +249,7 @@ const processNext = async () => {
             draft.hlsManifestPath = undefined;
             draft.posterFilename = undefined;
             draft.processingStatus = 'ready';
-            draft.processingError = 'Không thể tối ưu hóa video, đang dùng bản gốc.';
+            draft.processingError = 'Không thể xử lý media, đang dùng bản gốc.';
             draft.streamVariant = 'original';
         });
     } finally {
@@ -369,7 +260,7 @@ const processNext = async () => {
     }
 };
 
-export const enqueueVideoOptimization = async (videoId: string) => {
+export const enqueueVideoProcessing = async (videoId: string) => {
     if (!config.mediaProcessingEnabled) {
         return;
     }
@@ -377,21 +268,6 @@ export const enqueueVideoOptimization = async (videoId: string) => {
     const video = await dbRepository.findVideoById(videoId);
     if (!video || video.mediaType !== 'video') {
         return;
-    }
-
-    try {
-        const sourcePath = path.join(config.uploadsDir, video.sourceFilename);
-        const sourceMetadata = await probe(sourcePath);
-        await dbRepository.updateVideo(videoId, (draft) => {
-            draft.durationSeconds = sourceMetadata.durationSeconds;
-            draft.height = sourceMetadata.height;
-            draft.width = sourceMetadata.width;
-        });
-    } catch (error) {
-        logError('media.probe_failed', {
-            error: error instanceof Error ? error.message : String(error),
-            videoId,
-        });
     }
 
     queue.push(videoId);

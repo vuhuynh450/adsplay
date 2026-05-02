@@ -3,6 +3,12 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Video } from '../../../../services/api.service';
 
+export type UploadTarget = 'local' | 'r2';
+export interface UploadMediaPayload {
+  file: File;
+  storageTarget: UploadTarget;
+}
+
 @Component({
   selector: 'app-video-list',
   imports: [CommonModule, FormsModule],
@@ -15,7 +21,9 @@ export class VideoList {
   @Input() uploadProgress = 0;
   @Input() maxUploadSizeBytes = 2 * 1024 * 1024 * 1024;
   @Input() uploadStatusLabel = 'Sẵn sàng tải lên';
-  @Output() upload = new EventEmitter<File>();
+  @Input() selectedUploadTarget: UploadTarget = 'local';
+  @Output() upload = new EventEmitter<UploadMediaPayload>();
+  @Output() uploadTargetChange = new EventEmitter<UploadTarget>();
   @Output() delete = new EventEmitter<string>();
   @Output() preview = new EventEmitter<Video>();
 
@@ -23,7 +31,7 @@ export class VideoList {
   query = '';
   sortBy: 'largest' | 'most-used' | 'name' | 'newest' = 'newest';
 
-  private readonly ALLOWED_TYPES = [
+  private readonly LOCAL_ALLOWED_TYPES = [
     'video/mp4',
     'video/webm',
     'video/ogg',
@@ -33,6 +41,8 @@ export class VideoList {
     'image/webp',
     'image/gif',
   ];
+
+  private readonly R2_ALLOWED_TYPES = ['video/mp4'];
 
   get filteredVideos() {
     const query = this.query.trim().toLowerCase();
@@ -71,8 +81,11 @@ export class VideoList {
       return;
     }
 
-    if (!this.ALLOWED_TYPES.includes(file.type)) {
-      this.uploadError = `Định dạng không hỗ trợ (${file.type || 'unknown'}). Chọn MP4, WebM, OGG, MOV, JPG, PNG, GIF hoặc WebP.`;
+    const allowedTypes = this.selectedUploadTarget === 'r2' ? this.R2_ALLOWED_TYPES : this.LOCAL_ALLOWED_TYPES;
+    if (!allowedTypes.includes(file.type)) {
+      this.uploadError = this.selectedUploadTarget === 'r2'
+        ? `R2 chỉ hỗ trợ MP4 (${file.type || 'unknown'} không hợp lệ).`
+        : `Định dạng không hỗ trợ (${file.type || 'unknown'}). Chọn MP4, WebM, OGG, MOV, JPG, PNG, GIF hoặc WebP.`;
       input.value = '';
       return;
     }
@@ -84,8 +97,22 @@ export class VideoList {
       return;
     }
 
-    this.upload.emit(file);
+    this.upload.emit({
+      file,
+      storageTarget: this.selectedUploadTarget,
+    });
     input.value = '';
+  }
+
+  setUploadTarget(target: UploadTarget) {
+    this.uploadTargetChange.emit(target);
+    this.uploadError = null;
+  }
+
+  getFileAccept() {
+    return this.selectedUploadTarget === 'r2'
+      ? 'video/mp4'
+      : 'video/mp4,video/webm,video/ogg,video/quicktime,image/jpeg,image/png,image/webp,image/gif';
   }
 
   formatUploadedAt(value: string) {
@@ -98,14 +125,14 @@ export class VideoList {
     }
 
     if (video.processingStatus === 'processing') {
-      return 'Đang tối ưu';
+      return 'Đang xử lý';
     }
 
     if (video.processingStatus === 'pending') {
       return 'Đang xếp hàng';
     }
 
-    return video.streamVariant === 'optimized' ? 'Sẵn sàng HD' : 'Sẵn sàng bản gốc';
+    return 'Sẵn sàng bản gốc';
   }
 
   getPosterUrl(video: Video) {
@@ -130,5 +157,13 @@ export class VideoList {
 
   getMaxUploadSizeLabel() {
     return `${(this.maxUploadSizeBytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+  }
+
+  getUploadHint() {
+    if (this.selectedUploadTarget === 'r2') {
+      return `R2: chỉ MP4 (không HLS), tối đa ${this.getMaxUploadSizeLabel()}.`;
+    }
+
+    return `Local: MP4, WebM, OGG, MOV, JPG, PNG, GIF, WebP. Tối đa ${this.getMaxUploadSizeLabel()}.`;
   }
 }

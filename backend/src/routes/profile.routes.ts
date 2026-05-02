@@ -12,10 +12,10 @@ import {
     saveProfile,
 } from '../services/profile.service';
 import {
-    requireOptionalProfileOrientation,
+    requireNonEmptyString,
+    requireOptionalOrientation,
     requireOptionalString,
     requireStringArray,
-    requireNonEmptyString,
 } from '../utils/validation';
 
 export const profileRouter = Router();
@@ -75,7 +75,7 @@ profileRouter.post(
         const name = requireNonEmptyString(req.body?.name, 'name');
         const videoIds = requireStringArray(req.body?.videoIds, 'videoIds');
         const id = requireOptionalString(req.body?.id, 'id');
-        const orientation = requireOptionalProfileOrientation(req.body?.orientation, 'orientation') || 'landscape';
+        const orientation = requireOptionalOrientation(req.body?.orientation, 'orientation') || 'landscape';
         const profile = await saveProfile({ id, name, orientation, videoIds });
         res.setHeader('Cache-Control', 'private, no-store');
         res.json(profile);

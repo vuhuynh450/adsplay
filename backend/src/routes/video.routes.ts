@@ -13,10 +13,11 @@ import {
     getVideoHlsAssetFile,
     getVideoPolicy,
     getVideoPosterFile,
-    getVideoStreamFile,
+    getVideoStreamSource,
     listVideos,
     saveUploadedVideo,
     saveUploadedVideoFromFile,
+    saveUploadedVideoToR2,
 } from '../services/video.service';
 import {
     consumeUploadSessionToFile,
@@ -205,7 +206,13 @@ videoRouter.delete(
 videoRouter.get(
     '/:id/stream',
     asyncHandler(async (req, res) => {
-        const { absolutePath, video } = await getVideoStreamFile(requireNonEmptyString(req.params.id, 'id'));
+        const streamSource = await getVideoStreamSource(requireNonEmptyString(req.params.id, 'id'));
+        if (streamSource.kind === 'r2') {
+            res.redirect(streamSource.streamUrl);
+            return;
+        }
+
+        const { absolutePath, video } = streamSource;
         const stats = await fs.stat(absolutePath);
         const rangeHeader = req.headers.range;
 
@@ -285,7 +292,21 @@ videoRouter.post(
             throw new AppError(400, 'UPLOAD_MISSING_FILE', 'No file uploaded.');
         }
 
-        const video = await saveUploadedVideo(req.file);
+        const storageTarget = (req.body?.storageTarget || 'local').toString().trim().toLowerCase();
+        if (storageTarget !== 'local' && storageTarget !== 'r2') {
+            throw new AppError(400, 'UPLOAD_STORAGE_TARGET_INVALID', 'storageTarget must be local or r2.');
+        }
+
+        if (storageTarget === 'r2' && req.file.mimetype !== 'video/mp4') {
+            const partialFilePath = path.join(config.uploadsDir, req.file.filename);
+            if (await fs.pathExists(partialFilePath)) {
+                await fs.remove(partialFilePath);
+            }
+            throw new AppError(400, 'R2_UPLOAD_MP4_ONLY', 'R2 upload currently supports MP4 videos only.');
+        }
+
+        const video =
+            storageTarget === 'r2' ? await saveUploadedVideoToR2(req.file) : await saveUploadedVideo(req.file);
         res.json(video);
     }),
 );

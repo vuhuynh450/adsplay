@@ -110,7 +110,7 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
         </div>
         
         <p class="mt-8 text-center text-slate-500 dark:text-slate-400 text-sm">
-          ADSPLAY Signage Solution &bull; &copy; {{ currentYear }}
+          KTPLAY Signage Solution by VH &bull; &copy; {{ currentYear }}
         </p>
       </div>
     </div>

@@ -128,7 +128,7 @@ http://192.168.1.50:3000/player
 - Keep the AdPlay window or terminal open while the system is running
 - The first tap on a TV may be needed to enable sound or fullscreen
 - Large uploads may continue in chunks if the network is unstable
-- Videos may be optimized in the background after upload
+- Uploaded videos are kept as original files for direct streaming
 - AdPlay also creates poster images for the admin library when processing succeeds
 - Image ads are ready immediately after upload and can be mixed into the same playlist as videos
 - The modern player prefers HLS playback automatically and falls back to direct MP4 streaming if needed
@@ -162,8 +162,8 @@ http://192.168.1.50:3000/player
 ### Video uploaded but is still processing
 
 - That is normal
-- AdPlay uploads first, then optimizes in the background
-- If optimization does not improve the file, AdPlay keeps the original video
+- AdPlay uploads first, then creates playback metadata, poster, and HLS assets in the background
+- The original uploaded video remains the direct stream source
 
 ### My image uploaded but does not play like a video
 
@@ -308,18 +308,18 @@ Important backend files:
 2. Admin uploads videos
 3. Backend stores the uploaded file locally
 4. Backend creates a video record in `db.json`
-5. Backend may optimize the video in the background with FFmpeg
+5. Backend may create poster and HLS assets in the background with FFmpeg
 6. Admin creates profiles and assigns videos to them
 7. A player device opens `/player/:profileSlug`
 8. The player requests profile data and prefers HLS playback when available
-9. If HLS is unavailable or unsupported, the player falls back to direct file streaming from the backend
+9. If HLS is unavailable or unsupported, the player falls back to direct streaming from the original uploaded file
 
 ### Storage model
 
 AdPlay uses local file storage plus a local JSON database.
 
 - uploaded video files live under `backend/uploads/`
-- processed videos live under `backend/uploads/processed/`
+- generated poster and HLS assets live under `backend/uploads/processed/`
 - resumable upload session state lives under `backend/uploads/.sessions/`
 - app data lives in `backend/db.json`
 
@@ -339,12 +339,10 @@ AdPlay now has a more complete media pipeline than a simple single POST upload.
 
 ### Processing
 
-- after upload, the backend may optimize the video with FFmpeg
-- optimization happens in-process in the current server
-- if the optimized file is smaller and usable, AdPlay serves it
-- if optimization is worse, AdPlay keeps the original file
-- the backend also generates a poster image for the admin media library
-- the backend also generates a single-variant HLS playlist for the modern player when processing succeeds
+- after upload, the backend keeps the original video as the direct stream source
+- media processing happens in-process in the current server
+- the backend generates a poster image for the admin media library
+- the backend generates a single-variant HLS playlist for the modern player when processing succeeds
 
 ### Streaming
 
@@ -401,7 +399,7 @@ RESUMABLE_CHUNK_SIZE_MB=8
   Maximum allowed upload size in MB
 
 - `MEDIA_TRANSCODE_ENABLED`
-  Enable or disable FFmpeg optimization
+  Enable or disable FFmpeg media processing for videos, including metadata, poster, and HLS generation
 
 - `RESUMABLE_CHUNK_SIZE_MB`
   Chunk size for resumable uploads
@@ -488,7 +486,7 @@ If you run this in production:
 - set a strong `JWT_SECRET`
 - run with `NODE_ENV=production`
 - keep regular backups of `db.json` and the `uploads/` folder
-- make sure the host machine has enough disk space for raw and optimized videos
+- make sure the host machine has enough disk space for uploaded videos and generated media assets
 
 ---
 

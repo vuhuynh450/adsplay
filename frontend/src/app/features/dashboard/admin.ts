@@ -3,14 +3,23 @@ import { CommonModule } from '@angular/common';
 import { AuthService } from '../../services/auth.service';
 import { ApiService, Video } from '../../services/api.service';
 import { ThemeToggle } from '../../shared/ui/theme-toggle/theme-toggle';
-import { VideoList } from './components/video-list/video-list';
+import { UploadMediaPayload, UploadTarget, VideoList } from './components/video-list/video-list';
 import { ProfileManager } from './components/profile-manager/profile-manager';
+import {
+  AssignDeviceProfilePayload,
+  ConfirmPendingDevicePayload,
+  DeleteDevicesBulkPayload,
+  DeviceManager,
+  RenameDevicePayload,
+} from './components/device-manager/device-manager';
 import { ConfirmModal } from '../../shared/ui/confirm-modal/confirm-modal';
 import { DashboardStore, SaveProfilePayload } from './dashboard.store';
 
+type AdminTab = 'videos' | 'profiles' | 'devices';
+
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule, VideoList, ProfileManager, ThemeToggle, ConfirmModal],
+  imports: [CommonModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal],
   providers: [DashboardStore],
   templateUrl: './admin.html',
   styleUrl: './admin.css',
@@ -30,10 +39,12 @@ export class Admin implements OnInit {
       url.hostname = localIp;
     }
 
-    return `${url.origin}/player`;
+    return `${url.origin}/device`;
   });
 
-  activeTab: 'videos' | 'profiles' = 'videos';
+  private readonly activeTabStorageKey = 'adsplay-admin-active-tab';
+
+  activeTab: AdminTab = 'videos';
   isMobileMenuOpen = signal(false);
   videoDeletingId = signal<string | null>(null);
   previewingVideo = signal<Video | null>(null);
@@ -48,15 +59,35 @@ export class Admin implements OnInit {
   }
 
   ngOnInit() {
+    this.activeTab = this.getPersistedActiveTab();
     this.store.initialize();
+  }
+
+  setActiveTab(tab: AdminTab) {
+    this.activeTab = tab;
+    this.isMobileMenuOpen.set(false);
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(this.activeTabStorageKey, tab);
+    } catch {
+      return;
+    }
   }
 
   onLogout() {
     this.authService.logout();
   }
 
-  onUpload(file: File) {
-    this.store.uploadMedia(file);
+  onUpload(payload: UploadMediaPayload) {
+    this.store.uploadMedia(payload.file, payload.storageTarget);
+  }
+
+  onUploadTargetChange(target: UploadTarget) {
+    this.store.setUploadTarget(target);
   }
 
   requestDeleteVideo(id: string) {
@@ -91,6 +122,30 @@ export class Admin implements OnInit {
 
   onDeleteProfile(id: string) {
     this.store.deleteProfile(id);
+  }
+
+  onConfirmPendingDevice(payload: ConfirmPendingDevicePayload) {
+    this.store.confirmPendingDeviceRegistration(payload.requestId, payload.deviceCode);
+  }
+
+  onAssignDeviceProfile(payload: AssignDeviceProfilePayload) {
+    this.store.assignDeviceProfile(payload.deviceId, payload.profileId);
+  }
+
+  onUnassignDeviceProfile(payload: { deviceId: string }) {
+    this.store.unassignDeviceProfile(payload.deviceId);
+  }
+
+  onRenameDevice(payload: RenameDevicePayload) {
+    this.store.renameDevice(payload.deviceId, payload.name);
+  }
+
+  onDeleteDevice(payload: { deviceId: string }) {
+    this.store.deleteDevice(payload.deviceId);
+  }
+
+  onDeleteDevicesBulk(payload: DeleteDevicesBulkPayload) {
+    this.store.deleteDevicesBulk(payload.deviceIds);
   }
 
   copyUrl() {
@@ -154,6 +209,23 @@ export class Admin implements OnInit {
   formatPreviewUploadedAt() {
     const video = this.previewingVideo();
     return video ? new Date(video.uploadedAt).toLocaleString() : '';
+  }
+
+  private getPersistedActiveTab(): AdminTab {
+    if (typeof window === 'undefined') {
+      return 'videos';
+    }
+
+    try {
+      const persistedTab = window.localStorage.getItem(this.activeTabStorageKey);
+      if (persistedTab === 'videos' || persistedTab === 'profiles' || persistedTab === 'devices') {
+        return persistedTab;
+      }
+    } catch {
+      return 'videos';
+    }
+
+    return 'videos';
   }
 
   private fallbackCopyTextToClipboard(text: string) {

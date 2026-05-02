@@ -26,3 +26,6 @@ backend/db.json
 
 # Local launcher output
 AdPlay Access.txt
+
+# Git worktrees
+.worktrees/

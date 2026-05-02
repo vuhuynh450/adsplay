@@ -1,8 +1,16 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { HttpEventType } from '@angular/common/http';
 import { forkJoin, interval, of } from 'rxjs';
-import { catchError, finalize, startWith, switchMap } from 'rxjs/operators';
+import { catchError, finalize, map, startWith, switchMap } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ApiService, Profile, ProfileOrientation, Video } from '../../services/api.service';
+import {
+  AdminDevice,
+  ApiService,
+  PendingDeviceRegistration,
+  Profile,
+  ProfileOrientation,
+  Video,
+} from '../../services/api.service';
 import { ToastService } from '../../shared/services/toast.service';
 import { getErrorMessage } from '../../shared/utils/error-message';
 import { ResumableUploadService } from './resumable-upload.service';
@@ -23,10 +31,13 @@ export class DashboardStore {
 
   readonly videos = signal<Video[]>([]);
   readonly profiles = signal<Profile[]>([]);
+  readonly devices = signal<AdminDevice[]>([]);
+  readonly pendingDeviceRegistrations = signal<PendingDeviceRegistration[]>([]);
   readonly loading = signal(false);
   readonly isUploading = signal(false);
   readonly uploadProgress = signal(0);
   readonly uploadStatusLabel = signal('Sẵn sàng tải lên');
+  readonly uploadTarget = signal<'local' | 'r2'>('local');
   readonly isSystemOnline = signal(true);
   readonly systemInfo = signal<{ uptime: number; localIps: string[] } | null>(null);
   readonly maxUploadSizeBytes = signal(2 * 1024 * 1024 * 1024);
@@ -42,6 +53,8 @@ export class DashboardStore {
     this.loading.set(true);
 
     forkJoin({
+      devices: this.api.getDevices(),
+      pendingDeviceRegistrations: this.api.getPendingDeviceRegistrations(),
       profiles: this.api.getProfiles(true),
       videos: this.api.getVideos(true),
     })
@@ -50,7 +63,9 @@ export class DashboardStore {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ profiles, videos }) => {
+        next: ({ devices, pendingDeviceRegistrations, profiles, videos }) => {
+          this.devices.set(devices);
+          this.pendingDeviceRegistrations.set(pendingDeviceRegistrations);
           this.profiles.set(profiles);
           this.videos.set(videos);
         },
@@ -84,20 +99,24 @@ export class DashboardStore {
       });
   }
 
-  async uploadMedia(file: File) {
+  async uploadMedia(file: File, storageTarget: 'local' | 'r2' = this.uploadTarget()) {
     this.isUploading.set(true);
     this.uploadProgress.set(0);
-    this.uploadStatusLabel.set('Đang tạo phiên tải lên...');
+    this.uploadStatusLabel.set(storageTarget === 'r2' ? 'Đang tải lên Cloudflare R2...' : 'Đang tạo phiên tải lên...');
 
     try {
-      await this.resumableUpload.uploadFile(file, (progressPercent, session) => {
-        this.uploadProgress.set(progressPercent);
-        this.uploadStatusLabel.set(
-          session.uploadedChunkIndexes.length > 0
-            ? `Đang tiếp tục tải lên (${session.uploadedChunkIndexes.length}/${session.totalChunks} chunk đã có)`
-            : 'Đang tải lên theo từng chunk...',
-        );
-      });
+      if (storageTarget === 'r2') {
+        await this.uploadR2WithProgress(file);
+      } else {
+        await this.resumableUpload.uploadFile(file, (progressPercent, session) => {
+          this.uploadProgress.set(progressPercent);
+          this.uploadStatusLabel.set(
+            session.uploadedChunkIndexes.length > 0
+              ? `Đang tiếp tục tải lên (${session.uploadedChunkIndexes.length}/${session.totalChunks} chunk đã có)`
+              : 'Đang tải lên theo từng chunk...',
+          );
+        });
+      }
 
       const successLabel = file.type.startsWith('image/') ? 'Ảnh' : 'Video';
       this.toastService.show(`${successLabel} đã được tải lên thành công.`, 'success');
@@ -118,9 +137,43 @@ export class DashboardStore {
       .subscribe({
         next: (policy) => {
           this.maxUploadSizeBytes.set(policy.maxUploadSizeBytes);
+          const r2Enabled = policy.storageTargets?.includes('r2') || false;
+          if (!r2Enabled && this.uploadTarget() === 'r2') {
+            this.uploadTarget.set('local');
+          }
         },
         error: () => undefined,
       });
+  }
+
+  setUploadTarget(target: 'local' | 'r2') {
+    this.uploadTarget.set(target);
+  }
+
+  private uploadR2WithProgress(file: File) {
+    return new Promise<void>((resolve, reject) => {
+      const totalBytes = file.size || 0;
+
+      this.api.uploadVideo(file, 'r2').subscribe({
+        next: (event) => {
+          if (event.type === HttpEventType.UploadProgress) {
+            const loaded = event.loaded || 0;
+            const total = event.total || totalBytes;
+            const progress = total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0;
+            this.uploadProgress.set(progress);
+            this.uploadStatusLabel.set(`Đang tải lên Cloudflare R2... ${progress}%`);
+            return;
+          }
+
+          if (event.type === HttpEventType.Response) {
+            this.uploadProgress.set(100);
+            this.uploadStatusLabel.set('Đang hoàn tất upload...');
+            resolve();
+          }
+        },
+        error: (error) => reject(error),
+      });
+    });
   }
 
   saveProfile(payload: SaveProfilePayload) {
@@ -154,6 +207,113 @@ export class DashboardStore {
         error: (error) => {
           this.toastService.show(getErrorMessage(error, 'Không thể xóa màn hình.'), 'error');
         },
+      });
+  }
+
+  confirmPendingDeviceRegistration(requestId: string, deviceCode: string) {
+    this.api
+      .confirmPendingDeviceRegistration(requestId, deviceCode)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toastService.show('Đã xác nhận thiết bị mới.', 'success');
+          this.refreshAll();
+        },
+        error: (error) => {
+          this.toastService.show(getErrorMessage(error, 'Không thể xác nhận thiết bị.'), 'error');
+        },
+      });
+  }
+
+  assignDeviceProfile(deviceId: string, profileId: string) {
+    this.api
+      .assignDeviceProfile(deviceId, profileId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toastService.show('Đã gán thiết bị vào màn hình.', 'success');
+          this.refreshAll();
+        },
+        error: (error) => {
+          this.toastService.show(getErrorMessage(error, 'Không thể gán thiết bị.'), 'error');
+        },
+      });
+  }
+
+  unassignDeviceProfile(deviceId: string) {
+    this.api
+      .unassignDeviceProfile(deviceId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toastService.show('Đã bỏ gán thiết bị.', 'success');
+          this.refreshAll();
+        },
+        error: (error) => {
+          this.toastService.show(getErrorMessage(error, 'Không thể bỏ gán thiết bị.'), 'error');
+        },
+      });
+  }
+
+  renameDevice(deviceId: string, name: string) {
+    this.api
+      .renameDevice(deviceId, name)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toastService.show('Đã đổi tên thiết bị.', 'success');
+          this.refreshAll();
+        },
+        error: (error) => {
+          this.toastService.show(getErrorMessage(error, 'Không thể đổi tên thiết bị.'), 'error');
+        },
+      });
+  }
+
+  deleteDevice(deviceId: string) {
+    this.api
+      .deleteDevice(deviceId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toastService.show('Đã xóa thiết bị.', 'success');
+          this.refreshAll();
+        },
+        error: (error) => {
+          this.toastService.show(getErrorMessage(error, 'Không thể xóa thiết bị.'), 'error');
+        },
+      });
+  }
+
+  deleteDevicesBulk(deviceIds: string[]) {
+    const uniqueDeviceIds = [...new Set(deviceIds.map((id) => id.trim()).filter(Boolean))];
+    if (!uniqueDeviceIds.length) {
+      this.toastService.show('Chưa chọn thiết bị để xóa.', 'error');
+      return;
+    }
+
+    forkJoin(
+      uniqueDeviceIds.map((deviceId) =>
+        this.api.deleteDevice(deviceId).pipe(
+          map(() => ({ success: true })),
+          catchError(() => of({ success: false })),
+        ),
+      ),
+    )
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((results) => {
+        const successCount = results.filter((result) => result.success).length;
+        const total = uniqueDeviceIds.length;
+
+        if (successCount === total) {
+          this.toastService.show(`Đã xóa ${successCount} thiết bị.`, 'success');
+        } else if (successCount > 0) {
+          this.toastService.show(`Đã xóa ${successCount}/${total} thiết bị.`, 'info');
+        } else {
+          this.toastService.show('Không thể xóa thiết bị đã chọn.', 'error');
+        }
+
+        this.refreshAll();
       });
   }
 

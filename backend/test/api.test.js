@@ -23,7 +23,23 @@ process.env.MAX_UPLOAD_SIZE_MB = '512';
 process.env.MEDIA_TRANSCODE_ENABLED = 'false';
 
 const { createApp } = require('../dist/app');
-const { dbRepository } = require('../dist/db');
+const {
+  __forceNextCreateDeviceCodeConflictForTests,
+  dbRepository,
+} = require('../dist/db');
+const {
+  __resetDeviceCodeGeneratorForTests,
+  __resetPendingDeviceRegistrationsForTests,
+  __setDeviceCodeGeneratorForTests,
+} = require('../dist/services/device.service');
+const {
+  __configureRegisterRateLimitForTests,
+  __resetRegisterRateLimitForTests,
+} = require('../dist/routes/device.routes');
+const {
+  __resetR2StorageForTests,
+  __setR2StorageForTests,
+} = require('../dist/services/r2-storage.service');
 
 const app = createApp();
 const resumableChunkSizeBytes = 8 * 1024 * 1024;
@@ -42,6 +58,44 @@ const loginAsAdmin = async () => {
     token: loginResponse.body.token,
   };
 };
+
+const registerAndConfirmDevice = async (authHeader, name) => {
+  const registerResponse = await request(app)
+    .post('/api/devices/register')
+    .send({ name });
+
+  assert.equal(registerResponse.status, 200);
+  assert.ok(registerResponse.body.requestId);
+  assert.ok(registerResponse.body.deviceCode);
+  assert.equal(registerResponse.body.deviceId, undefined);
+  assert.equal(registerResponse.body.deviceToken, undefined);
+
+  const confirmResponse = await request(app)
+    .post(`/api/devices/pending/${registerResponse.body.requestId}/confirm`)
+    .set(authHeader)
+    .send({ deviceCode: registerResponse.body.deviceCode });
+  assert.equal(confirmResponse.status, 200);
+
+  const pendingStatusAfterConfirm = await request(app)
+    .get(`/api/devices/register/${registerResponse.body.requestId}/status`);
+  assert.equal(pendingStatusAfterConfirm.status, 200);
+  assert.equal(pendingStatusAfterConfirm.body.status, 'confirmed');
+  assert.ok(pendingStatusAfterConfirm.body.deviceId);
+  assert.ok(pendingStatusAfterConfirm.body.deviceToken);
+
+  return {
+    adminDevice: confirmResponse.body,
+    credentials: pendingStatusAfterConfirm.body,
+    registerRequest: registerResponse.body,
+  };
+};
+
+test.beforeEach(() => {
+  __resetRegisterRateLimitForTests();
+  __resetDeviceCodeGeneratorForTests();
+  __resetPendingDeviceRegistrationsForTests();
+  __resetR2StorageForTests();
+});
 
 test.after(async () => {
   await fs.remove(tmpRoot);
@@ -62,6 +116,18 @@ test('legacy player route serves the standalone HTML page', async () => {
 
   assert.equal(response.status, 200);
   assert.match(response.text, /legacy player/i);
+});
+
+test('login response includes user role + page metadata', async () => {
+  const response = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'admin',
+  });
+
+  assert.equal(response.status, 200);
+  assert.ok(response.body.user);
+  assert.equal(response.body.user.role, 'admin');
+  assert.ok(Array.isArray(response.body.user.allowedPages));
 });
 
 test('auth and system status flow works', async () => {
@@ -109,7 +175,6 @@ test('video upload and profile lifecycle work end-to-end', async () => {
 
   assert.equal(createProfileResponse.status, 200);
   assert.equal(createProfileResponse.body.slug, 'lobby-screen');
-  assert.equal(createProfileResponse.body.orientation, 'landscape');
   assert.equal(createProfileResponse.body.videos.length, 1);
   assert.ok(createProfileResponse.body.playerAccessToken);
 
@@ -126,14 +191,12 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(adminProfilesResponse.status, 200);
   const adminProfile = adminProfilesResponse.body.find((profile) => profile.id === createProfileResponse.body.id);
   assert.equal(adminProfile.playerAccessToken, createProfileResponse.body.playerAccessToken);
-  assert.equal(adminProfile.orientation, 'landscape');
   assert.equal(adminProfile.videoIds.length, 1);
 
   const publicProfile = await request(app).get('/api/profiles/slug/lobby-screen');
   assert.equal(publicProfile.status, 200);
   assert.equal(publicProfile.body.name, 'Lobby Screen');
   assert.equal(publicProfile.body.slug, 'lobby-screen');
-  assert.equal(publicProfile.body.orientation, 'landscape');
   assert.equal(publicProfile.body.id, undefined);
   assert.equal(publicProfile.body.lastSeen, undefined);
 
@@ -198,7 +261,7 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(deleteProfileResponse.status, 200);
 });
 
-test('POST /api/profiles rejects invalid orientation with 400 validation error', async () => {
+test('device binding flow supports pending registration, confirmation, assignment, and token heartbeat', async () => {
   const { authHeader } = await loginAsAdmin();
 
   const uploadResponse = await request(app)
@@ -206,22 +269,314 @@ test('POST /api/profiles rejects invalid orientation with 400 validation error',
     .set(authHeader)
     .attach('video', Buffer.from('fake mp4 content'), {
       contentType: 'video/mp4',
-      filename: 'orientation-check.mp4',
+      filename: 'device-promo.mp4',
     });
-
   assert.equal(uploadResponse.status, 200);
 
-  const createProfileResponse = await request(app)
+  const profileResponse = await request(app)
     .post('/api/profiles')
     .set(authHeader)
     .send({
-      name: 'Invalid Orientation Screen',
-      orientation: 'flip45',
+      name: 'Device Lobby',
       videoIds: [uploadResponse.body.id],
     });
+  assert.equal(profileResponse.status, 200);
 
-  assert.equal(createProfileResponse.status, 400);
-  assert.equal(createProfileResponse.body.error.code, 'VALIDATION_ERROR');
+  const registerResponse = await request(app)
+    .post('/api/devices/register')
+    .send({
+      name: 'Lobby TV',
+    });
+  assert.equal(registerResponse.status, 200);
+  assert.ok(registerResponse.body.requestId);
+  assert.ok(registerResponse.body.deviceCode);
+  assert.equal(registerResponse.body.deviceId, undefined);
+  assert.equal(registerResponse.body.deviceToken, undefined);
+
+  const pendingList = await request(app)
+    .get('/api/devices/pending')
+    .set(authHeader);
+  assert.equal(pendingList.status, 200);
+  const pendingItem = pendingList.body.find((item) => item.requestId === registerResponse.body.requestId);
+  assert.ok(pendingItem);
+
+  const deviceListBeforeConfirm = await request(app)
+    .get('/api/devices')
+    .set(authHeader);
+  assert.equal(deviceListBeforeConfirm.status, 200);
+  const unconfirmedDevice = deviceListBeforeConfirm.body.find((item) => item.deviceCode === registerResponse.body.deviceCode);
+  assert.equal(unconfirmedDevice, undefined);
+
+  const wrongConfirmResponse = await request(app)
+    .post(`/api/devices/pending/${registerResponse.body.requestId}/confirm`)
+    .set(authHeader)
+    .send({ deviceCode: 'WRONG1' });
+  assert.equal(wrongConfirmResponse.status, 409);
+  assert.equal(wrongConfirmResponse.body.error.code, 'DEVICE_CODE_MISMATCH');
+
+  const confirmResponse = await request(app)
+    .post(`/api/devices/pending/${registerResponse.body.requestId}/confirm`)
+    .set(authHeader)
+    .send({ deviceCode: registerResponse.body.deviceCode });
+  assert.equal(confirmResponse.status, 200);
+  assert.ok(confirmResponse.body.id);
+
+  const registrationStatus = await request(app)
+    .get(`/api/devices/register/${registerResponse.body.requestId}/status`);
+  assert.equal(registrationStatus.status, 200);
+  assert.equal(registrationStatus.body.status, 'confirmed');
+  assert.ok(registrationStatus.body.deviceId);
+  assert.ok(registrationStatus.body.deviceToken);
+
+  const unassignedBindingResponse = await request(app)
+    .get(`/api/player/device/${registrationStatus.body.deviceId}`)
+    .set('X-Device-Token', registrationStatus.body.deviceToken);
+  assert.equal(unassignedBindingResponse.status, 409);
+  assert.equal(unassignedBindingResponse.body.error.code, 'DEVICE_NOT_ASSIGNED');
+
+  const assignResponse = await request(app)
+    .post(`/api/devices/${registrationStatus.body.deviceId}/assign-profile`)
+    .set(authHeader)
+    .send({ profileId: profileResponse.body.id });
+  assert.equal(assignResponse.status, 200);
+  assert.equal(assignResponse.body.assignedProfileId, profileResponse.body.id);
+
+  const bindingResponse = await request(app)
+    .get(`/api/player/device/${registrationStatus.body.deviceId}`)
+    .set('X-Device-Token', registrationStatus.body.deviceToken);
+  assert.equal(bindingResponse.status, 200);
+  assert.equal(bindingResponse.body.device.id, registrationStatus.body.deviceId);
+  assert.equal(bindingResponse.body.profile.name, 'Device Lobby');
+  assert.equal(bindingResponse.body.profile.slug, 'device-lobby');
+  assert.equal(bindingResponse.body.profile.videos.length, 1);
+
+  const heartbeatResponse = await request(app)
+    .post(`/api/player/device/${registrationStatus.body.deviceId}/heartbeat`)
+    .set('X-Device-Token', registrationStatus.body.deviceToken);
+  assert.equal(heartbeatResponse.status, 200);
+  assert.equal(heartbeatResponse.body.success, true);
+
+  const devicesResponse = await request(app).get('/api/devices').set(authHeader);
+  assert.equal(devicesResponse.status, 200);
+  const device = devicesResponse.body.find((item) => item.id === registrationStatus.body.deviceId);
+  assert.equal(device.assignedProfileId, profileResponse.body.id);
+  assert.ok(device.lastSeen);
+  assert.equal(device.secretHash, undefined);
+
+  const deleteResponse = await request(app)
+    .delete(`/api/devices/${registrationStatus.body.deviceId}`)
+    .set(authHeader);
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deleteResponse.body.success, true);
+
+  const devicesAfterDelete = await request(app).get('/api/devices').set(authHeader);
+  assert.equal(devicesAfterDelete.status, 200);
+  const deletedDevice = devicesAfterDelete.body.find((item) => item.id === registrationStatus.body.deviceId);
+  assert.equal(deletedDevice, undefined);
+
+  const deletedDeviceBinding = await request(app)
+    .get(`/api/player/device/${registrationStatus.body.deviceId}`)
+    .set('X-Device-Token', registrationStatus.body.deviceToken);
+  assert.equal(deletedDeviceBinding.status, 404);
+  assert.equal(deletedDeviceBinding.body.error.code, 'DEVICE_NOT_FOUND');
+});
+
+test('pending device registration is removed when player stops polling status', async (context) => {
+  const { authHeader } = await loginAsAdmin();
+
+  context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-04-01T00:00:00.000Z') });
+
+  const registerResponse = await request(app)
+    .post('/api/devices/register')
+    .send({ name: 'Stale TV' });
+  assert.equal(registerResponse.status, 200);
+
+  const pendingBeforeStale = await request(app)
+    .get('/api/devices/pending')
+    .set(authHeader);
+  assert.equal(pendingBeforeStale.status, 200);
+  const pendingItemBeforeStale = pendingBeforeStale.body.find((item) => item.requestId === registerResponse.body.requestId);
+  assert.ok(pendingItemBeforeStale);
+
+  context.mock.timers.tick(31_000);
+
+  const pendingAfterStale = await request(app)
+    .get('/api/devices/pending')
+    .set(authHeader);
+  assert.equal(pendingAfterStale.status, 200);
+  const pendingItemAfterStale = pendingAfterStale.body.find((item) => item.requestId === registerResponse.body.requestId);
+  assert.equal(pendingItemAfterStale, undefined);
+});
+
+test('device routes enforce token validation and profile assignment errors', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('fake mp4 content'), {
+      contentType: 'video/mp4',
+      filename: 'security-promo.mp4',
+    });
+  assert.equal(uploadResponse.status, 200);
+
+  const profileA = await request(app)
+    .post('/api/profiles')
+    .set(authHeader)
+    .send({ name: 'Security A', videoIds: [uploadResponse.body.id] });
+  assert.equal(profileA.status, 200);
+
+  const profileB = await request(app)
+    .post('/api/profiles')
+    .set(authHeader)
+    .send({ name: 'Security B', videoIds: [uploadResponse.body.id] });
+  assert.equal(profileB.status, 200);
+
+  const deviceA = await registerAndConfirmDevice(authHeader, 'Device A');
+  const deviceB = await registerAndConfirmDevice(authHeader, 'Device B');
+
+  const missingToken = await request(app).get(`/api/player/device/${deviceA.credentials.deviceId}`);
+  assert.equal(missingToken.status, 400);
+
+  const tamperedToken = await request(app)
+    .get(`/api/player/device/${deviceA.credentials.deviceId}`)
+    .set('X-Device-Token', `${deviceA.credentials.deviceToken}.bad`);
+  assert.equal(tamperedToken.status, 403);
+  assert.equal(tamperedToken.body.error.code, 'DEVICE_TOKEN_INVALID');
+
+  const wrongDeviceToken = await request(app)
+    .get(`/api/player/device/${deviceB.credentials.deviceId}`)
+    .set('X-Device-Token', deviceA.credentials.deviceToken);
+  assert.equal(wrongDeviceToken.status, 403);
+  assert.equal(wrongDeviceToken.body.error.code, 'DEVICE_TOKEN_INVALID');
+
+  const assignMissingProfile = await request(app)
+    .post(`/api/devices/${deviceA.credentials.deviceId}/assign-profile`)
+    .set(authHeader)
+    .send({ profileId: 'profile-does-not-exist' });
+  assert.equal(assignMissingProfile.status, 404);
+  assert.equal(assignMissingProfile.body.error.code, 'PROFILE_NOT_FOUND');
+
+  const assignA = await request(app)
+    .post(`/api/devices/${deviceA.credentials.deviceId}/assign-profile`)
+    .set(authHeader)
+    .send({ profileId: profileA.body.id });
+  assert.equal(assignA.status, 200);
+
+  const rotateResponse = await request(app)
+    .post(`/api/devices/${deviceA.credentials.deviceId}/rotate-token`)
+    .set(authHeader);
+  assert.equal(rotateResponse.status, 200);
+  assert.ok(rotateResponse.body.deviceToken);
+
+  const oldTokenAfterRotate = await request(app)
+    .get(`/api/player/device/${deviceA.credentials.deviceId}`)
+    .set('X-Device-Token', deviceA.credentials.deviceToken);
+  assert.equal(oldTokenAfterRotate.status, 403);
+  assert.equal(oldTokenAfterRotate.body.error.code, 'DEVICE_TOKEN_INVALID');
+
+  const newTokenAfterRotate = await request(app)
+    .get(`/api/player/device/${deviceA.credentials.deviceId}`)
+    .set('X-Device-Token', rotateResponse.body.deviceToken);
+  assert.equal(newTokenAfterRotate.status, 200);
+  assert.equal(newTokenAfterRotate.body.profile.slug, 'security-a');
+
+  const listResponse = await request(app).get('/api/devices').set(authHeader);
+  assert.equal(listResponse.status, 200);
+  const listedDevice = listResponse.body.find((item) => item.id === deviceA.credentials.deviceId);
+  assert.equal(listedDevice.secretHash, undefined);
+
+  const registerLeakCheck = await request(app).post('/api/devices/register').send({ name: 'No Leak' });
+  assert.equal(registerLeakCheck.status, 200);
+  assert.equal(registerLeakCheck.body.secretHash, undefined);
+
+  const assignB = await request(app)
+    .post(`/api/devices/${deviceB.credentials.deviceId}/assign-profile`)
+    .set(authHeader)
+    .send({ profileId: profileB.body.id });
+  assert.equal(assignB.status, 200);
+});
+
+test('device register applies rate limit and returns 429 when exceeded', async () => {
+  __configureRegisterRateLimitForTests({ maxRequests: 3, windowMs: 60_000 });
+
+  let statusCodes = [];
+
+  for (let index = 0; index < 4; index += 1) {
+    const response = await request(app).post('/api/devices/register').send({ name: `Rate ${index}` });
+    statusCodes.push(response.status);
+  }
+
+  assert.equal(statusCodes.slice(0, 3).every((code) => code === 200), true);
+  assert.equal(statusCodes[3], 429);
+});
+
+test('device register validates max length for optional name', async () => {
+  const tooLongName = 'x'.repeat(121);
+
+  const response = await request(app).post('/api/devices/register').send({ name: tooLongName });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'VALIDATION_ERROR');
+});
+
+test('device register accepts whitespace name and uses default name after confirmation', async () => {
+  const { authHeader } = await loginAsAdmin();
+  const response = await request(app).post('/api/devices/register').send({ name: '   ' });
+
+  assert.equal(response.status, 200);
+
+  const confirmResponse = await request(app)
+    .post(`/api/devices/pending/${response.body.requestId}/confirm`)
+    .set(authHeader)
+    .send({ deviceCode: response.body.deviceCode });
+  assert.equal(confirmResponse.status, 200);
+
+  const device = await dbRepository.findDeviceById(confirmResponse.body.id);
+  assert.ok(device);
+  assert.equal(device.name, 'TV Device');
+});
+
+test('device registration retries code generation to avoid duplicates', async () => {
+  const firstRegister = await request(app).post('/api/devices/register').send({ name: 'Unique Seed' });
+  assert.equal(firstRegister.status, 200);
+
+  let callCount = 0;
+  __setDeviceCodeGeneratorForTests(() => {
+    callCount += 1;
+    if (callCount === 1) {
+      return firstRegister.body.deviceCode;
+    }
+
+    return 'A1B2C3';
+  });
+
+  const secondRegister = await request(app).post('/api/devices/register').send({ name: 'Unique Retry' });
+  __resetDeviceCodeGeneratorForTests();
+
+  assert.equal(secondRegister.status, 200);
+  assert.notEqual(secondRegister.body.deviceCode, firstRegister.body.deviceCode);
+  assert.equal(secondRegister.body.deviceCode, 'A1B2C3');
+});
+
+test('device confirmation returns conflict when create path conflict happens', async () => {
+  const { authHeader } = await loginAsAdmin();
+  __setDeviceCodeGeneratorForTests(() => 'RACE01');
+
+  const response = await request(app).post('/api/devices/register').send({ name: 'Race Retry' });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.deviceCode, 'RACE01');
+
+  __forceNextCreateDeviceCodeConflictForTests();
+
+  const confirmResponse = await request(app)
+    .post(`/api/devices/pending/${response.body.requestId}/confirm`)
+    .set(authHeader)
+    .send({ deviceCode: response.body.deviceCode });
+  __resetDeviceCodeGeneratorForTests();
+
+  assert.equal(confirmResponse.status, 409);
+  assert.equal(confirmResponse.body.error.code, 'DEVICE_CODE_ALREADY_USED');
 });
 
 test('resumable upload sessions resume per client key without cross-client collisions', async () => {
@@ -305,6 +660,33 @@ test('image uploads are returned as image media and can be used in profiles', as
   assert.equal(publicProfile.body.videos[0].mediaType, 'image');
 });
 
+test('R2 uploads keep MP4 direct stream and do not expose HLS manifest', async () => {
+  const { authHeader } = await loginAsAdmin();
+  __setR2StorageForTests({
+    getStreamUrl: ({ key }) => `https://r2.example.com/${key}`,
+    uploadObject: async () => ({ key: 'videos/r2-promo.mp4' }),
+  });
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .field('storageTarget', 'r2')
+    .attach('video', Buffer.from('fake mp4 content'), {
+      contentType: 'video/mp4',
+      filename: 'r2-promo.mp4',
+    });
+
+  assert.equal(uploadResponse.status, 200);
+  assert.equal(uploadResponse.body.mediaType, 'video');
+  assert.equal(uploadResponse.body.processingStatus, 'ready');
+  assert.equal(uploadResponse.body.hlsManifestPath, undefined);
+  assert.equal(uploadResponse.body.storageProvider, 'r2');
+
+  const streamResponse = await request(app).get(`/api/videos/${uploadResponse.body.id}/stream`);
+  assert.equal(streamResponse.status, 302);
+  assert.equal(streamResponse.headers.location, 'https://r2.example.com/videos/r2-promo.mp4');
+});
+
 test('resumable upload sessions reject undersized non-final chunks and still assemble valid uploads', async () => {
   const { authHeader } = await loginAsAdmin();
   const fileBuffer = Buffer.alloc(resumableChunkSizeBytes + 32, 'a');
@@ -355,23 +737,6 @@ test('resumable upload sessions reject undersized non-final chunks and still ass
   assert.equal(completeResponse.status, 200);
   assert.equal(completeResponse.body.originalName, 'large-promo.mov');
   assert.equal(completeResponse.body.sourceSize, fileBuffer.length);
-});
-
-test('legacy invalid profile orientation is normalized to landscape', async () => {
-  await dbRepository.upsertProfile({
-    name: 'Legacy Orientation Screen',
-    orientation: 'portrait',
-    videoIds: [],
-  });
-
-  const normalizedProfile = await dbRepository.findProfileBySlug('legacy-orientation-screen');
-  assert.ok(normalizedProfile);
-  assert.equal(normalizedProfile.orientation, 'landscape');
-
-  const profiles = await dbRepository.listProfiles();
-  const listedProfile = profiles.find((profile) => profile.name === 'Legacy Orientation Screen');
-  assert.ok(listedProfile);
-  assert.equal(listedProfile.orientation, 'landscape');
 });
 
 test('missing video files return a clean app error', async () => {

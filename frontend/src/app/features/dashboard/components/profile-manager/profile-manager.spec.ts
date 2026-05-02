@@ -1,3 +1,4 @@
+import { TestBed } from '@angular/core/testing';
 import { ProfileManager } from './profile-manager';
 import { Profile, Video } from '../../../../services/api.service';
 
@@ -11,6 +12,7 @@ const video = (partial: Partial<Video>): Video => ({
   sourceFilename: 'file.mp4',
   sourceSize: 100,
   size: 100,
+  storageProvider: 'local',
   streamVariant: 'original',
   updatedAt: '2026-03-10T00:00:00.000Z',
   uploadedAt: '2026-03-10T00:00:00.000Z',
@@ -21,12 +23,12 @@ const profile = (partial: Partial<Profile>): Profile => ({
   createdAt: '2026-03-10T00:00:00.000Z',
   id: 'profile-1',
   name: 'Lobby',
-  orientation: 'landscape',
   playerAccessToken: 'player-token',
   slug: 'lobby',
   updatedAt: '2026-03-10T00:00:00.000Z',
   videoIds: ['1'],
   ...partial,
+  orientation: partial.orientation ?? 'landscape',
 });
 
 describe('ProfileManager', () => {
@@ -52,51 +54,6 @@ describe('ProfileManager', () => {
     ]);
   });
 
-  it('uses profile orientation when editing existing profile', () => {
-    const component = new ProfileManager();
-    const emitted: unknown[] = [];
-
-    component.videos = [video({ id: 'video-1' })];
-    component.profiles = [profile({ id: 'profile-2', name: 'Portrait TV', orientation: 'rotate90', videoIds: ['video-1'] })];
-    component.saveProfile.subscribe((payload) => emitted.push(payload));
-
-    component.openEdit(component.profiles[0]);
-    component.save();
-
-    expect(emitted).toEqual([
-      {
-        id: 'profile-2',
-        name: 'Portrait TV',
-        orientation: 'rotate90',
-        videoIds: ['video-1'],
-      },
-    ]);
-  });
-
-  it('falls back to landscape for legacy profile without orientation', () => {
-    const component = new ProfileManager();
-    const emitted: unknown[] = [];
-
-    const legacyProfile: any = profile({ id: 'profile-legacy', name: 'Legacy TV', videoIds: ['video-1'] });
-    delete legacyProfile.orientation;
-
-    component.videos = [video({ id: 'video-1' })];
-    component.profiles = [legacyProfile as unknown as Profile];
-    component.saveProfile.subscribe((payload) => emitted.push(payload));
-
-    component.openEdit(component.profiles[0]);
-    component.save();
-
-    expect(emitted).toEqual([
-      {
-        id: 'profile-legacy',
-        name: 'Legacy TV',
-        orientation: 'landscape',
-        videoIds: ['video-1'],
-      },
-    ]);
-  });
-
   it('blocks duplicate slug collisions before emitting', () => {
     const component = new ProfileManager();
 
@@ -109,6 +66,58 @@ describe('ProfileManager', () => {
     component.save();
 
     expect(component.formError).toContain('slug');
+  });
+
+  it('does not render old player link section on profile cards', () => {
+    TestBed.configureTestingModule({
+      imports: [ProfileManager],
+    });
+
+    const fixture = TestBed.createComponent(ProfileManager);
+    const component = fixture.componentInstance;
+    component.profiles = [profile({ id: 'profile-1', name: 'Main Screen', slug: 'main-screen' })];
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Player mới');
+    expect(text).not.toContain('TV cũ');
+  });
+
+  it('shows settings and delete actions in card header without computer icon', () => {
+    TestBed.configureTestingModule({
+      imports: [ProfileManager],
+    });
+
+    const fixture = TestBed.createComponent(ProfileManager);
+    const component = fixture.componentInstance;
+    component.profiles = [profile({ id: 'profile-1', name: 'Main Screen', slug: 'main-screen' })];
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const monitorIcons = host.querySelectorAll('svg.h-6.w-6');
+    const headerActionButtons = host.querySelectorAll('article .border-b button');
+    const footerActionButtons = host.querySelectorAll('article .bg-slate-50 button');
+
+    expect(monitorIcons.length).toBe(0);
+    expect(headerActionButtons.length).toBe(2);
+    expect(footerActionButtons.length).toBe(0);
+  });
+
+  it('does not render playback link label in profile config modal', () => {
+    TestBed.configureTestingModule({
+      imports: [ProfileManager],
+    });
+
+    const fixture = TestBed.createComponent(ProfileManager);
+    const component = fixture.componentInstance;
+    component.videos = [video({ id: 'video-1' })];
+    component.openCreate();
+    component.profileName = 'Main Screen';
+    component.addToPlaylist(component.videos[0]);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).not.toContain('Link phát:');
   });
 
   it('builds a dedicated legacy player URL for old TVs', () => {

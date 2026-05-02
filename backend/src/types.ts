@@ -1,8 +1,13 @@
 export type MediaType = 'video' | 'image';
 export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
+export type VideoStorageProvider = 'local' | 'r2';
 export type VideoStreamVariant = 'optimized' | 'original';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
 export type ProfileOrientation = 'landscape' | 'rotate90' | 'rotate180' | 'rotate270';
+
+import type { PageKey } from './constants/page-access';
+export type { PageKey };
+export type UserRole = 'admin' | 'staff';
 
 export interface Video {
     createdAt: string;
@@ -20,6 +25,8 @@ export interface Video {
     sourceMimeType?: string;
     sourceSize: number;
     size: number;
+    storageProvider: VideoStorageProvider;
+    r2ObjectKey?: string;
     streamVariant: VideoStreamVariant;
     durationSeconds?: number;
     updatedAt: string;
@@ -38,13 +45,46 @@ export interface Profile {
     videoIds: string[];
 }
 
+export interface Device {
+    assignedProfileId?: string;
+    createdAt: string;
+    deviceCode: string;
+    id: string;
+    lastSeen?: string;
+    name: string;
+    secretHash: string;
+    updatedAt: string;
+}
+
+export interface AdminDevice {
+    assignedProfileId?: string;
+    createdAt: string;
+    deviceCode: string;
+    id: string;
+    lastSeen?: string;
+    name: string;
+    updatedAt: string;
+}
+
+export interface PlayerDeviceBinding {
+    device: AdminDevice;
+    profile: PlayerProfile;
+}
+
 export interface User {
     id: string;
-    passwordHash: string;
     username: string;
+    passwordHash: string;
+    role: UserRole;
+    isActive: boolean;
+    mustChangePassword: boolean;
+    allowedPages: PageKey[];
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface DatabaseSchema {
+    devices: Device[];
     profiles: Profile[];
     users: User[];
     videos: Video[];

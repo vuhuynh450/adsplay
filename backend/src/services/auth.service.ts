@@ -18,6 +18,12 @@ export interface ProfileHeartbeatTokenPayload extends jwt.JwtPayload {
     tokenType: 'profile-heartbeat';
 }
 
+export interface DeviceTokenPayload extends jwt.JwtPayload {
+    deviceId: string;
+    deviceSecret: string;
+    tokenType: 'device';
+}
+
 const verifySignedToken = (token: string) => {
     try {
         return jwt.verify(token, config.jwtSecret);
@@ -38,6 +44,12 @@ const isProfileHeartbeatTokenPayload = (
     payload.tokenType === 'profile-heartbeat' &&
     typeof payload.profileId === 'string' &&
     typeof payload.profileSlug === 'string';
+
+const isDeviceTokenPayload = (payload: string | jwt.JwtPayload): payload is DeviceTokenPayload =>
+    typeof payload !== 'string' &&
+    payload.tokenType === 'device' &&
+    typeof payload.deviceId === 'string' &&
+    typeof payload.deviceSecret === 'string';
 
 export const login = async (username: string, password: string) => {
     const dbUser = await dbRepository.findUserByUsername(username);
@@ -79,6 +91,32 @@ export const verifyProfileHeartbeatToken = (token: string, expectedSlug: string)
     const payload = verifySignedToken(token);
     if (!isProfileHeartbeatTokenPayload(payload) || payload.profileSlug !== expectedSlug) {
         throw new AppError(403, 'PROFILE_HEARTBEAT_INVALID', 'Player heartbeat token is invalid.');
+    }
+
+    return payload;
+};
+
+export const createDeviceToken = (device: { id: string; deviceSecret: string }) =>
+    jwt.sign(
+        {
+            deviceId: device.id,
+            deviceSecret: device.deviceSecret,
+            tokenType: 'device',
+        },
+        config.jwtSecret,
+    );
+
+export const verifyDeviceToken = (token: string, expectedDeviceId: string) => {
+    let payload: string | jwt.JwtPayload;
+
+    try {
+        payload = verifySignedToken(token);
+    } catch {
+        throw new AppError(403, 'DEVICE_TOKEN_INVALID', 'Device token is invalid.');
+    }
+
+    if (!isDeviceTokenPayload(payload) || payload.deviceId !== expectedDeviceId) {
+        throw new AppError(403, 'DEVICE_TOKEN_INVALID', 'Device token is invalid.');
     }
 
     return payload;

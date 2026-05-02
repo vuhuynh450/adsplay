@@ -1,6 +1,8 @@
-import { Injectable, NgZone, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, NgZone, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { ApiService, PlayerProfile, PlayerProfileSummary, Video } from '../../services/api.service';
+import { ApiService, PlayerDeviceBinding, PlayerProfile, PlayerProfileSummary, Video } from '../../services/api.service';
 
 interface PlaybackSource {
   hlsUrl: string | null;
@@ -18,16 +20,33 @@ const ORIENTATION_ROTATION_MAP: Record<NonNullable<PlayerProfile['orientation']>
 };
 
 const PLAYER_TOKEN_STORAGE_PREFIX = 'adsplay-player-token:';
+const DEVICE_ID_STORAGE_KEY = 'adsplay-device-id';
+const DEVICE_TOKEN_STORAGE_KEY = 'adsplay-device-token';
+const DEVICE_CODE_STORAGE_KEY = 'adsplay-device-code';
+const DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY = 'adsplay-device-registration-request-id';
+
+type PlayerMode = 'selection' | 'profile' | 'device';
+
+interface DeviceCredentials {
+  deviceCode: string;
+  deviceId: string;
+  deviceToken: string;
+}
 
 @Injectable()
 export class PlayerSessionService {
   private static readonly MAX_CACHEABLE_VIDEO_BYTES = 120 * 1024 * 1024;
   private static readonly MAX_PREFETCH_VIDEO_BYTES = 80 * 1024 * 1024;
   private static readonly IMAGE_DISPLAY_DURATION_SECONDS = 10;
+  private static readonly PLAYLIST_SYNC_INTERVAL_MS = 60_000;
+  private static readonly DEVICE_REGISTRATION_SYNC_INTERVAL_MS = 3_000;
+  private static readonly DEVICE_ASSIGNED_SYNC_INTERVAL_MS = 3_000;
+  private static readonly DEVICE_UNASSIGNED_SYNC_INTERVAL_MS = 5_000;
 
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
   private readonly zone = inject(NgZone);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly isFullscreen = signal(false);
   readonly profile = signal<PlayerProfile | null>(null);
@@ -42,6 +61,7 @@ export class PlayerSessionService {
   readonly currentVideoPosterUrl = signal('');
   readonly localVideoUrl = signal('');
   readonly statusMessage = signal<string | null>(null);
+  readonly deviceCode = signal<string | null>(null);
 
   private containerElement: HTMLDivElement | null = null;
   private videoElement: HTMLVideoElement | null = null;
@@ -59,13 +79,16 @@ export class PlayerSessionService {
   private playlistSyncInterval: number | null = null;
   private endedSafetyTimeout: number | null = null;
   private heartbeatFailures = 0;
-  private isPlaylistUpdated = false;
   private activeLoadToken = 0;
   private activePlayback: PlaybackSource | null = null;
   private activePlaybackMode: 'hls' | 'mp4' | null = null;
   private hasTriedMp4Fallback = false;
   private pendingPlayback: PlaybackSource | null = null;
   private playerAccessToken: string | null = null;
+  private playerMode: PlayerMode = 'selection';
+  private routeRequestId = 0;
+  private deviceCredentials: DeviceCredentials | null = null;
+  private deviceRegistrationRequestId: string | null = null;
   private readonly prefetchingUrls = new Set<string>();
   private hlsLibraryPromise: Promise<typeof import('hls.js').default> | null = null;
   private unmuteOverlayTimeout: number | null = null;
@@ -185,32 +208,35 @@ export class PlayerSessionService {
     this.containerElement = element;
   }
 
-  handleRoute(profileSlug?: string, playerAccessToken?: string | null) {
+  isDeviceMode() {
+    return this.playerMode === 'device';
+  }
+
+  handleRoute(profileSlug?: string, playerAccessToken?: string | null, mode?: unknown) {
+    const requestId = ++this.routeRequestId;
+
+    if (mode === 'device') {
+      this.playerMode = 'device';
+      this.playerAccessToken = null;
+      this.loadDeviceRoute(requestId);
+      return;
+    }
+
+    this.playerMode = profileSlug ? 'profile' : 'selection';
+    this.deviceCredentials = null;
+    this.deviceRegistrationRequestId = null;
+    this.deviceCode.set(null);
     this.playerAccessToken = profileSlug
       ? this.resolvePlayerAccessToken(profileSlug, playerAccessToken)
       : null;
 
     if (profileSlug) {
-      this.loadProfileBySlug(profileSlug);
+      this.loadProfileBySlug(profileSlug, requestId);
       return;
     }
 
-    this.stopHeartbeat(true);
-    this.stopPlaylistSync();
-    this.clearImageAdvanceTimer();
-    this.clearUnmuteOverlayTimeout();
-    this.profile.set(null);
-    this.showUnmuteOverlay.set(false);
-    this.currentMediaType.set(null);
-    this.currentImageUrl.set('');
-    this.currentVideoPosterUrl.set('');
-    this.releaseCurrentObjectUrl();
-    this.localVideoUrl.set('');
-    this.statusMessage.set(null);
-    this.pendingPlayback = null;
-    this.activePlayback = null;
-    this.destroyHls();
-    this.loadAllProfiles();
+    this.resetPlaybackState();
+    this.loadAllProfiles(requestId);
   }
 
   selectProfile(profile: PlayerProfileSummary) {
@@ -243,21 +269,17 @@ export class PlayerSessionService {
   }
 
   backToSelection() {
-    this.stopHeartbeat(true);
-    this.stopPlaylistSync();
-    this.clearImageAdvanceTimer();
-    this.clearUnmuteOverlayTimeout();
+    if (this.playerMode === 'device') {
+      this.resetPlaybackState();
+      this.loadDeviceRoute(++this.routeRequestId);
+      return;
+    }
+
+    this.playerMode = 'selection';
     this.playerAccessToken = null;
-    this.profile.set(null);
-    this.showUnmuteOverlay.set(false);
-    this.currentMediaType.set(null);
-    this.currentImageUrl.set('');
-    this.currentVideoPosterUrl.set('');
-    this.releaseCurrentObjectUrl();
-    this.localVideoUrl.set('');
-    this.pendingPlayback = null;
-    this.activePlayback = null;
-    this.destroyHls();
+    this.deviceCredentials = null;
+    this.deviceCode.set(null);
+    this.resetPlaybackState();
     void this.router.navigate(['/player']);
   }
 
@@ -270,12 +292,8 @@ export class PlayerSessionService {
     return ORIENTATION_ROTATION_MAP[orientation] ?? 0;
   }
 
-  getMediaWrapperStyle() {
-    const rotation = this.getRotationDegrees();
-    return {
-      transform: `rotate(${rotation}deg)`,
-      'transform-origin': 'center center',
-    };
+  getMediaWrapperTransform() {
+    return `rotate(${this.getRotationDegrees()}deg)`;
   }
 
   private resetActivityTimer() {
@@ -298,7 +316,15 @@ export class PlayerSessionService {
 
   private startHeartbeat() {
     const profile = this.profile();
-    if (!profile?.slug || !this.playerAccessToken || this.heartbeatInterval) {
+    if (this.heartbeatInterval || !profile?.slug) {
+      return;
+    }
+
+    if (this.playerMode === 'device') {
+      if (!this.deviceCredentials) {
+        return;
+      }
+    } else if (!this.playerAccessToken) {
       return;
     }
 
@@ -308,12 +334,12 @@ export class PlayerSessionService {
     this.sendHeartbeatPulse();
   }
 
-  private startPlaylistSync() {
+  private startPlaylistSync(intervalMs = PlayerSessionService.PLAYLIST_SYNC_INTERVAL_MS) {
     this.stopPlaylistSync();
 
     this.playlistSyncInterval = window.setInterval(() => {
       this.triggerManualSync();
-    }, 60000);
+    }, intervalMs);
   }
 
   private stopHeartbeat(resetFailures = false) {
@@ -350,17 +376,42 @@ export class PlayerSessionService {
 
   private sendHeartbeatPulse() {
     const profile = this.profile();
-    const playerAccessToken = this.playerAccessToken;
-    if (!profile?.slug || !playerAccessToken) {
+    if (!profile?.slug) {
       return;
     }
 
-    this.api.sendHeartbeat(profile.slug, playerAccessToken).subscribe({
+    const request = this.playerMode === 'device'
+      ? this.deviceCredentials
+        ? this.api.sendDeviceHeartbeat(this.deviceCredentials.deviceId, this.deviceCredentials.deviceToken)
+        : null
+      : this.playerAccessToken
+        ? this.api.sendHeartbeat(profile.slug, this.playerAccessToken)
+        : null;
+
+    if (!request) {
+      return;
+    }
+
+    request.subscribe({
       next: () => {
         this.heartbeatFailures = 0;
       },
       error: (error: { status?: number }) => {
-        if (error?.status === 400 || error?.status === 403 || error?.status === 404) {
+        if (this.playerMode === 'device') {
+          const errorCode = this.getApiErrorCode(error);
+          if (
+            errorCode === 'DEVICE_TOKEN_INVALID' ||
+            errorCode === 'DEVICE_NOT_FOUND' ||
+            error?.status === 403 ||
+            error?.status === 404
+          ) {
+            this.clearStoredDeviceCredentials();
+            this.deviceCredentials = null;
+            this.deviceRegistrationRequestId = null;
+            this.registerDeviceAndLoadBinding(++this.routeRequestId);
+            return;
+          }
+        } else if (error?.status === 400 || error?.status === 403 || error?.status === 404) {
           this.clearStoredPlayerAccessToken(profile.slug);
           this.playerAccessToken = null;
         }
@@ -374,6 +425,11 @@ export class PlayerSessionService {
   }
 
   private triggerManualSync() {
+    if (this.playerMode === 'device') {
+      this.syncDeviceBinding();
+      return;
+    }
+
     const activeProfile = this.profile();
     if (!activeProfile?.slug) {
       return;
@@ -386,76 +442,355 @@ export class PlayerSessionService {
           this.startHeartbeat();
         }
 
-        const currentVideosHash = activeProfile.videos?.map((video) => video.id).join(',') || '';
-        const newVideosHash = updatedProfile.videos?.map((video) => video.id).join(',') || '';
-
-        if (currentVideosHash !== newVideosHash) {
-          if (updatedProfile.videos) {
-            void this.syncCacheWithBackend(updatedProfile.videos);
-          }
-          this.profile.set(updatedProfile);
-          this.isPlaylistUpdated = true;
-        }
+        this.applyProfileUpdate(updatedProfile, activeProfile);
       },
       error: () => undefined,
     });
   }
 
-  private loadAllProfiles() {
-    this.loading.set(true);
-    this.api.getPlayerProfiles().subscribe({
-      next: (profiles) => {
-        this.allProfiles.set(profiles);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.statusMessage.set('Không thể tải danh sách màn hình.');
-        this.loading.set(false);
-      },
-    });
+  private resetPlaybackState() {
+    this.stopHeartbeat(true);
+    this.stopPlaylistSync();
+    this.clearImageAdvanceTimer();
+    this.clearUnmuteOverlayTimeout();
+    this.profile.set(null);
+    this.showUnmuteOverlay.set(false);
+    this.currentMediaType.set(null);
+    this.currentImageUrl.set('');
+    this.currentVideoPosterUrl.set('');
+    this.releaseCurrentObjectUrl();
+    this.localVideoUrl.set('');
+    this.statusMessage.set(null);
+    this.pendingPlayback = null;
+    this.activePlayback = null;
+    this.destroyHls();
   }
 
-  private loadProfileBySlug(profileSlug: string) {
+  private loadDeviceRoute(requestId: number) {
+    this.resetPlaybackState();
+    this.loading.set(true);
+
+    const storedCredentials = this.getStoredDeviceCredentials();
+    if (storedCredentials) {
+      this.deviceCredentials = storedCredentials;
+      this.deviceRegistrationRequestId = null;
+      this.clearStoredDeviceRegistrationRequestId();
+      this.deviceCode.set(storedCredentials.deviceCode);
+      this.loadDeviceBinding(storedCredentials, requestId);
+      return;
+    }
+
+    const storedRequestId = this.getStoredDeviceRegistrationRequestId();
+    if (storedRequestId) {
+      this.deviceCredentials = null;
+      this.deviceRegistrationRequestId = storedRequestId;
+      this.syncPendingDeviceRegistration(storedRequestId, requestId, true);
+      return;
+    }
+
+    this.registerDeviceAndLoadBinding(requestId);
+  }
+
+  private registerDeviceAndLoadBinding(requestId: number = this.routeRequestId) {
+    this.resetPlaybackState();
+    this.loading.set(true);
+    this.api
+      .registerDevice()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (registration) => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          this.deviceCredentials = null;
+          this.deviceRegistrationRequestId = registration.requestId;
+          this.storeDeviceRegistrationRequestId(registration.requestId);
+          this.deviceCode.set(registration.deviceCode);
+          this.loading.set(false);
+          this.statusMessage.set('Nhập đúng mã trên TV trong trang quản trị để xác nhận kết nối.');
+          this.startPlaylistSync(PlayerSessionService.DEVICE_REGISTRATION_SYNC_INTERVAL_MS);
+        },
+        error: () => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          this.loading.set(false);
+          this.statusMessage.set('Không thể tạo yêu cầu kết nối thiết bị. Vui lòng kiểm tra mạng.');
+        },
+      });
+  }
+
+  private syncPendingDeviceRegistration(
+    requestId: string,
+    routeRequestId: number = this.routeRequestId,
+    keepPolling = true,
+  ) {
+    this.api
+      .getDeviceRegistrationStatus(requestId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (status) => {
+          if (routeRequestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          if (status.status === 'pending') {
+            this.deviceCredentials = null;
+            this.deviceRegistrationRequestId = requestId;
+            this.deviceCode.set(status.deviceCode);
+            this.loading.set(false);
+            this.statusMessage.set('Thiết bị đang chờ quản trị xác nhận mã.');
+            if (keepPolling) {
+              this.startPlaylistSync(PlayerSessionService.DEVICE_REGISTRATION_SYNC_INTERVAL_MS);
+            }
+            return;
+          }
+
+          const credentials = {
+            deviceCode: status.deviceCode,
+            deviceId: status.deviceId,
+            deviceToken: status.deviceToken,
+          };
+
+          this.deviceCredentials = credentials;
+          this.deviceRegistrationRequestId = null;
+          this.clearStoredDeviceRegistrationRequestId();
+          this.storeDeviceCredentials(credentials);
+          this.deviceCode.set(credentials.deviceCode);
+          this.loadDeviceBinding(credentials, routeRequestId);
+        },
+        error: (error) => {
+          if (routeRequestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          if ((error as { status?: number })?.status === 404) {
+            this.clearStoredDeviceRegistrationRequestId();
+            this.deviceRegistrationRequestId = null;
+            this.deviceCode.set(null);
+            this.registerDeviceAndLoadBinding(++this.routeRequestId);
+            return;
+          }
+
+          this.loading.set(false);
+          this.statusMessage.set('Không thể kiểm tra trạng thái xác nhận thiết bị. Hệ thống sẽ tự thử lại.');
+          this.startPlaylistSync(PlayerSessionService.DEVICE_REGISTRATION_SYNC_INTERVAL_MS);
+        },
+      });
+  }
+
+  private loadDeviceBinding(
+    credentials: DeviceCredentials,
+    requestId: number = this.routeRequestId,
+    keepCurrentPlayback = false,
+  ) {
+    this.api
+      .getPlayerBindingByDevice(credentials.deviceId, credentials.deviceToken)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (binding) => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          const activeProfile = keepCurrentPlayback ? this.profile() : null;
+          this.applyDeviceBinding(binding, activeProfile || undefined);
+        },
+        error: (error) => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'device') {
+            return;
+          }
+
+          this.handleDeviceBindingError(error, keepCurrentPlayback);
+        },
+      });
+  }
+
+  private syncDeviceBinding() {
+    const credentials = this.deviceCredentials;
+    const requestId = this.routeRequestId;
+
+    if (!credentials) {
+      const registrationRequestId = this.deviceRegistrationRequestId || this.getStoredDeviceRegistrationRequestId();
+      if (registrationRequestId) {
+        this.syncPendingDeviceRegistration(registrationRequestId, requestId, false);
+        return;
+      }
+
+      this.registerDeviceAndLoadBinding(++this.routeRequestId);
+      return;
+    }
+
+    this.loadDeviceBinding(credentials, requestId, true);
+  }
+
+  private applyDeviceBinding(binding: PlayerDeviceBinding, previousProfile?: PlayerProfile) {
+    this.deviceCode.set(binding.device.deviceCode);
+    this.heartbeatFailures = 0;
+    this.loading.set(false);
+    this.statusMessage.set(null);
+
+    if (previousProfile) {
+      this.applyProfileUpdate(binding.profile, previousProfile);
+      this.startHeartbeat();
+      this.startPlaylistSync(PlayerSessionService.DEVICE_ASSIGNED_SYNC_INTERVAL_MS);
+      return;
+    }
+
+    this.startHeartbeat();
+    this.startPlaylistSync(PlayerSessionService.DEVICE_ASSIGNED_SYNC_INTERVAL_MS);
+    this.switchPlaybackToProfile(binding.profile);
+  }
+
+  private handleDeviceBindingError(error: unknown, keepCurrentPlayback = false) {
+    const errorCode = this.getApiErrorCode(error);
+
+    if (
+      errorCode === 'DEVICE_TOKEN_INVALID' ||
+      errorCode === 'DEVICE_NOT_FOUND' ||
+      (error as { status?: number })?.status === 403 ||
+      (error as { status?: number })?.status === 404
+    ) {
+      this.clearStoredDeviceCredentials();
+      this.deviceCredentials = null;
+      this.deviceRegistrationRequestId = null;
+      this.deviceCode.set(null);
+      this.registerDeviceAndLoadBinding(++this.routeRequestId);
+      return;
+    }
+
+    if (errorCode === 'DEVICE_NOT_ASSIGNED' || (error as { status?: number })?.status === 409) {
+      if (!keepCurrentPlayback) {
+        this.profile.set(null);
+        this.currentMediaType.set(null);
+        this.currentImageUrl.set('');
+        this.currentVideoPosterUrl.set('');
+        this.pendingPlayback = null;
+        this.activePlayback = null;
+        this.localVideoUrl.set('');
+      }
+      this.stopHeartbeat(true);
+      this.loading.set(false);
+      this.statusMessage.set('Thiết bị chưa được gán màn hình. Vui lòng gán thiết bị trong trang quản trị.');
+      this.startPlaylistSync(PlayerSessionService.DEVICE_UNASSIGNED_SYNC_INTERVAL_MS);
+      return;
+    }
+
+    this.loading.set(false);
+    this.statusMessage.set('Không thể tải cấu hình thiết bị. Hệ thống sẽ tự thử lại.');
+    this.startPlaylistSync();
+  }
+
+  private applyProfileUpdate(updatedProfile: PlayerProfile, activeProfile: PlayerProfile) {
+    const currentVideosHash = activeProfile.videos?.map((video) => video.id).join(',') || '';
+    const newVideosHash = updatedProfile.videos?.map((video) => video.id).join(',') || '';
+
+    if (currentVideosHash !== newVideosHash || activeProfile.slug !== updatedProfile.slug) {
+      this.switchPlaybackToProfile(updatedProfile);
+    }
+  }
+
+  private switchPlaybackToProfile(profile: PlayerProfile) {
+    this.profile.set(profile);
+    this.currentVideoIndex.set(0);
+    this.currentMediaType.set(null);
+    this.currentImageUrl.set('');
+    this.currentVideoPosterUrl.set('');
+    this.pendingPlayback = null;
+    this.activePlayback = null;
+    this.localVideoUrl.set('');
+    this.statusMessage.set(null);
+    this.clearImageAdvanceTimer();
+    this.clearUnmuteOverlayTimeout();
+
+    if (!profile.videos.length) {
+      this.statusMessage.set('Playlist hiện tại không có nội dung.');
+      return;
+    }
+
+    void this.syncCacheWithBackend(profile.videos);
+    void this.loadAndPlayMedia(0);
+  }
+
+  private loadAllProfiles(requestId: number) {
+    this.loading.set(true);
+    this.api
+      .getPlayerProfiles()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (profiles) => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'selection') {
+            return;
+          }
+
+          this.allProfiles.set(profiles);
+          this.loading.set(false);
+        },
+        error: () => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'selection') {
+            return;
+          }
+
+          this.statusMessage.set('Không thể tải danh sách màn hình.');
+          this.loading.set(false);
+        },
+      });
+  }
+
+  private loadProfileBySlug(profileSlug: string, requestId: number) {
     this.stopHeartbeat(true);
     this.stopPlaylistSync();
     this.clearImageAdvanceTimer();
     this.clearUnmuteOverlayTimeout();
     this.loading.set(true);
-    this.api.getProfileBySlug(profileSlug).subscribe({
-      next: (profile) => {
-        this.profile.set(profile);
-        this.currentVideoIndex.set(0);
-        this.loading.set(false);
-        this.statusMessage.set(null);
-        this.heartbeatFailures = 0;
-        this.startHeartbeat();
+    this.api
+      .getProfileBySlug(profileSlug)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (profile) => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'profile') {
+            return;
+          }
 
-        if (profile.videos.length) {
-          void this.syncCacheWithBackend(profile.videos);
-          void this.loadAndPlayMedia(0);
-        } else {
-          this.currentMediaType.set(null);
-          this.currentImageUrl.set('');
-          this.currentVideoPosterUrl.set('');
-          this.pendingPlayback = null;
-          this.activePlayback = null;
-          this.localVideoUrl.set('');
-          this.statusMessage.set('Playlist hiện tại không có nội dung.');
-        }
+          this.profile.set(profile);
+          this.currentVideoIndex.set(0);
+          this.loading.set(false);
+          this.statusMessage.set(null);
+          this.heartbeatFailures = 0;
+          this.startHeartbeat();
 
-        this.startPlaylistSync();
-      },
-      error: () => {
-        this.stopHeartbeat(true);
-        this.stopPlaylistSync();
-        this.clearImageAdvanceTimer();
-        this.clearUnmuteOverlayTimeout();
-        this.loading.set(false);
-        this.statusMessage.set('Không tìm thấy màn hình được yêu cầu.');
-        this.profile.set(null);
-        void this.router.navigate(['/player']);
-      },
-    });
+          if (profile.videos.length) {
+            void this.syncCacheWithBackend(profile.videos);
+            void this.loadAndPlayMedia(0);
+          } else {
+            this.currentMediaType.set(null);
+            this.currentImageUrl.set('');
+            this.currentVideoPosterUrl.set('');
+            this.pendingPlayback = null;
+            this.activePlayback = null;
+            this.localVideoUrl.set('');
+            this.statusMessage.set('Playlist hiện tại không có nội dung.');
+          }
+
+          this.startPlaylistSync();
+        },
+        error: () => {
+          if (requestId !== this.routeRequestId || this.playerMode !== 'profile') {
+            return;
+          }
+
+          this.stopHeartbeat(true);
+          this.stopPlaylistSync();
+          this.clearImageAdvanceTimer();
+          this.clearUnmuteOverlayTimeout();
+          this.loading.set(false);
+          this.statusMessage.set('Không tìm thấy màn hình được yêu cầu.');
+          this.profile.set(null);
+          void this.router.navigate(['/player']);
+        },
+      });
   }
 
   private async loadAndPlayMedia(index: number) {
@@ -808,6 +1143,95 @@ export class PlayerSessionService {
     }
   }
 
+  private getStoredDeviceRegistrationRequestId() {
+    if (typeof localStorage === 'undefined') {
+      return null;
+    }
+
+    try {
+      return localStorage.getItem(DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  private storeDeviceRegistrationRequestId(requestId: string) {
+    if (typeof localStorage === 'undefined' || !requestId) {
+      return;
+    }
+
+    try {
+      localStorage.setItem(DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY, requestId);
+    } catch {
+      return;
+    }
+  }
+
+  private clearStoredDeviceRegistrationRequestId() {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+
+    try {
+      localStorage.removeItem(DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY);
+    } catch {
+      return;
+    }
+  }
+
+  private getStoredDeviceCredentials(): DeviceCredentials | null {
+    if (typeof localStorage === 'undefined') {
+      return null;
+    }
+
+    try {
+      const deviceCode = localStorage.getItem(DEVICE_CODE_STORAGE_KEY);
+      const deviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+      const deviceToken = localStorage.getItem(DEVICE_TOKEN_STORAGE_KEY);
+      return deviceCode && deviceId && deviceToken ? { deviceCode, deviceId, deviceToken } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private storeDeviceCredentials(credentials: DeviceCredentials) {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+
+    try {
+      localStorage.setItem(DEVICE_CODE_STORAGE_KEY, credentials.deviceCode);
+      localStorage.setItem(DEVICE_ID_STORAGE_KEY, credentials.deviceId);
+      localStorage.setItem(DEVICE_TOKEN_STORAGE_KEY, credentials.deviceToken);
+      localStorage.removeItem(DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY);
+    } catch {
+      return;
+    }
+  }
+
+  private clearStoredDeviceCredentials() {
+    if (typeof localStorage === 'undefined') {
+      return;
+    }
+
+    try {
+      localStorage.removeItem(DEVICE_CODE_STORAGE_KEY);
+      localStorage.removeItem(DEVICE_ID_STORAGE_KEY);
+      localStorage.removeItem(DEVICE_TOKEN_STORAGE_KEY);
+      localStorage.removeItem(DEVICE_REGISTRATION_REQUEST_ID_STORAGE_KEY);
+    } catch {
+      return;
+    }
+  }
+
+  private getApiErrorCode(error: unknown) {
+    if (error instanceof HttpErrorResponse) {
+      return error.error?.error?.code as string | undefined;
+    }
+
+    return (error as { error?: { error?: { code?: string } } })?.error?.error?.code;
+  }
+
   private stripTokenFromUrl() {
     if (typeof window === 'undefined') {
       return;
@@ -968,18 +1392,6 @@ export class PlayerSessionService {
     const activeProfile = this.profile();
     if (!activeProfile?.videos?.length) {
       this.backToSelection();
-      return;
-    }
-
-    if (this.isPlaylistUpdated) {
-      this.isPlaylistUpdated = false;
-      this.clearImageAdvanceTimer();
-      this.clearUnmuteOverlayTimeout();
-      this.currentVideoIndex.set(0);
-      this.currentMediaType.set(null);
-      this.currentImageUrl.set('');
-      this.currentVideoPosterUrl.set('');
-      void this.loadAndPlayMedia(0);
       return;
     }
 

@@ -27,8 +27,29 @@
     {{ uploadError }}
   </div>
 
+  <div class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-black/20">
+    <button
+      type="button"
+      (click)="setUploadTarget('local')"
+      class="rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors"
+      [class.bg-brand-primary]="selectedUploadTarget === 'local'"
+      [class.text-white]="selectedUploadTarget === 'local'"
+      [class.text-slate-500]="selectedUploadTarget !== 'local'">
+      Local + HLS
+    </button>
+    <button
+      type="button"
+      (click)="setUploadTarget('r2')"
+      class="rounded-xl px-3 py-2 text-xs font-bold uppercase tracking-wider transition-colors"
+      [class.bg-brand-primary]="selectedUploadTarget === 'r2'"
+      [class.text-white]="selectedUploadTarget === 'r2'"
+      [class.text-slate-500]="selectedUploadTarget !== 'r2'">
+      Cloudflare R2 (MP4)
+    </button>
+  </div>
+
   <input type="file" #fileInput class="hidden" (change)="onFileSelected($event)"
-    accept="video/mp4,video/webm,video/ogg,video/quicktime,image/jpeg,image/png,image/webp,image/gif" [disabled]="isUploading">
+    [accept]="getFileAccept()" [disabled]="isUploading">
 
   <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
     <button type="button" (click)="!isUploading && fileInput.click()" [disabled]="isUploading"
@@ -67,10 +88,10 @@
         <div>
           <div class="text-xs font-bold uppercase tracking-widest" [class.text-brand-primary]="isUploading"
             [class.text-slate-500]="!isUploading" [class.group-hover:text-brand-primary]="!isUploading">
-            {{ isUploading ? uploadStatusLabel : 'Tải Nội Dung Mới' }}
+            {{ isUploading ? uploadStatusLabel : (selectedUploadTarget === 'r2' ? 'Tải Lên Cloudflare R2' : 'Tải Nội Dung Local') }}
           </div>
           <div class="mt-1 text-xs text-slate-400">
-            MP4, WebM, OGG, MOV, JPG, PNG, GIF, WebP. Tối đa {{ getMaxUploadSizeLabel() }}.
+            {{ getUploadHint() }}
           </div>
         </div>
       </div>
@@ -106,6 +127,7 @@
           <span class="rounded bg-black/40 px-2 py-1">{{ (video.size / 1024 / 1024) | number:'1.1-2' }} MB</span>
           <span class="rounded bg-black/40 px-2 py-1">{{ video.usageCount || 0 }} playlist</span>
           <span class="rounded bg-black/40 px-2 py-1">{{ getProcessingLabel(video) }}</span>
+          <span *ngIf="video.storageProvider === 'r2'" class="rounded bg-sky-500/20 px-2 py-1 text-sky-200">R2 MP4</span>
           <span *ngIf="video.hlsManifestPath" class="rounded bg-emerald-500/20 px-2 py-1 text-emerald-200">HLS</span>
         </div>
         <div class="mt-2 flex items-center justify-between gap-3">

@@ -5,6 +5,8 @@ import { requestIdMiddleware } from './middleware/request-id';
 import { requestLoggerMiddleware } from './middleware/request-logger';
 import { errorMiddleware, notFoundMiddleware } from './middleware/error-handler';
 import { authRouter } from './routes/auth.routes';
+import { deviceRouter } from './routes/device.routes';
+import { playerDeviceRouter } from './routes/player-device.routes';
 import { profileRouter } from './routes/profile.routes';
 import { systemRouter } from './routes/system.routes';
 import { videoRouter } from './routes/video.routes';
@@ -26,6 +28,8 @@ export const createApp = () => {
     });
 
     app.use('/api/auth', authRouter);
+    app.use('/api/devices', deviceRouter);
+    app.use('/api/player/device', playerDeviceRouter);
     app.use('/api/videos', videoRouter);
     app.use('/api/profiles', profileRouter);
     app.use('/api/system', systemRouter);

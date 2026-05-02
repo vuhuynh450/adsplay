@@ -29,10 +29,10 @@ export class Player implements OnInit, OnDestroy {
 
   ngOnInit() {
     this.session.initialize();
-    combineLatest([this.route.params, this.route.queryParamMap])
+    combineLatest([this.route.params, this.route.queryParamMap, this.route.data])
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(([params, queryParamMap]) => {
-        this.session.handleRoute(params['profileName'], queryParamMap.get('token'));
+      .subscribe(([params, queryParamMap, data]) => {
+        this.session.handleRoute(params['profileName'], queryParamMap.get('token'), data['mode']);
       });
   }
 

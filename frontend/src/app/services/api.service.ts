@@ -20,6 +20,8 @@ export interface Video {
     sourceMimeType?: string;
     sourceSize: number;
     size: number;
+    storageProvider: 'local' | 'r2';
+    r2ObjectKey?: string;
     streamVariant: 'optimized' | 'original';
     updatedAt: string;
     uploadedAt: string;
@@ -50,9 +52,51 @@ export interface PlayerProfileSummary {
 
 export interface PlayerProfile {
     name: string;
-    slug: string;
     orientation: ProfileOrientation;
+    slug: string;
     videos: Video[];
+}
+
+export interface AdminDevice {
+    assignedProfileId?: string;
+    createdAt: string;
+    deviceCode: string;
+    id: string;
+    lastSeen?: string;
+    name: string;
+    updatedAt: string;
+}
+
+export interface DeviceCredentialsResponse {
+    deviceCode: string;
+    deviceId: string;
+    deviceToken: string;
+}
+
+export interface StartDeviceRegistrationResponse {
+    deviceCode: string;
+    expiresAt: string;
+    requestId: string;
+}
+
+export interface PendingDeviceRegistration {
+    createdAt: string;
+    expiresAt: string;
+    requestId: string;
+}
+
+export type DeviceRegistrationStatusResponse =
+    | {
+        deviceCode: string;
+        expiresAt: string;
+        requestId: string;
+        status: 'pending';
+    }
+    | ({ status: 'confirmed' } & DeviceCredentialsResponse);
+
+export interface PlayerDeviceBinding {
+    device: AdminDevice;
+    profile: PlayerProfile;
 }
 
 export interface VideoPolicy {
@@ -60,6 +104,7 @@ export interface VideoPolicy {
     mediaProcessingEnabled: boolean;
     maxUploadSizeBytes: number;
     resumableChunkSizeBytes: number;
+    storageTargets?: Array<'local' | 'r2'>;
 }
 
 export interface UploadSession {
@@ -98,9 +143,10 @@ export class ApiService {
         return this.http.get<VideoPolicy>(`${this.apiUrl}/videos/policy`);
     }
 
-    uploadVideo(file: File): Observable<HttpEvent<Video>> {
+    uploadVideo(file: File, storageTarget: 'local' | 'r2' = 'local'): Observable<HttpEvent<Video>> {
         const formData = new FormData();
         formData.append('video', file);
+        formData.append('storageTarget', storageTarget);
         return this.http.post<Video>(`${this.apiUrl}/videos`, formData, {
             reportProgress: true,
             observe: 'events'
@@ -156,6 +202,68 @@ export class ApiService {
         return this.http.get<PlayerProfileSummary[]>(url, {
             context: this.createPublicRequestContext(),
         });
+    }
+
+    registerDevice(name?: string): Observable<StartDeviceRegistrationResponse> {
+        return this.http.post<StartDeviceRegistrationResponse>(`${this.apiUrl}/devices/register`, { name }, {
+            context: this.createPublicRequestContext(),
+        });
+    }
+
+    getDeviceRegistrationStatus(requestId: string): Observable<DeviceRegistrationStatusResponse> {
+        return this.http.get<DeviceRegistrationStatusResponse>(`${this.apiUrl}/devices/register/${requestId}/status`, {
+            context: this.createPublicRequestContext(),
+        });
+    }
+
+    getPlayerBindingByDevice(deviceId: string, deviceToken: string): Observable<PlayerDeviceBinding> {
+        return this.http.get<PlayerDeviceBinding>(`${this.apiUrl}/player/device/${deviceId}`, {
+            context: this.createPublicRequestContext(),
+            headers: {
+                'X-Device-Token': deviceToken,
+            },
+        });
+    }
+
+    sendDeviceHeartbeat(deviceId: string, deviceToken: string): Observable<any> {
+        return this.http.post(`${this.apiUrl}/player/device/${deviceId}/heartbeat`, {}, {
+            context: this.createPublicRequestContext(),
+            headers: {
+                'X-Device-Token': deviceToken,
+            },
+        });
+    }
+
+    getDevices(): Observable<AdminDevice[]> {
+        return this.http.get<AdminDevice[]>(`${this.apiUrl}/devices`);
+    }
+
+    getPendingDeviceRegistrations(): Observable<PendingDeviceRegistration[]> {
+        return this.http.get<PendingDeviceRegistration[]>(`${this.apiUrl}/devices/pending`);
+    }
+
+    confirmPendingDeviceRegistration(requestId: string, deviceCode: string): Observable<AdminDevice> {
+        return this.http.post<AdminDevice>(`${this.apiUrl}/devices/pending/${requestId}/confirm`, { deviceCode });
+    }
+
+    assignDeviceProfile(deviceId: string, profileId: string): Observable<AdminDevice> {
+        return this.http.post<AdminDevice>(`${this.apiUrl}/devices/${deviceId}/assign-profile`, { profileId });
+    }
+
+    unassignDeviceProfile(deviceId: string): Observable<AdminDevice> {
+        return this.http.post<AdminDevice>(`${this.apiUrl}/devices/${deviceId}/unassign`, {});
+    }
+
+    renameDevice(deviceId: string, name: string): Observable<AdminDevice> {
+        return this.http.patch<AdminDevice>(`${this.apiUrl}/devices/${deviceId}`, { name });
+    }
+
+    rotateDeviceToken(deviceId: string): Observable<DeviceCredentialsResponse> {
+        return this.http.post<DeviceCredentialsResponse>(`${this.apiUrl}/devices/${deviceId}/rotate-token`, {});
+    }
+
+    deleteDevice(deviceId: string): Observable<{ success: boolean }> {
+        return this.http.delete<{ success: boolean }>(`${this.apiUrl}/devices/${deviceId}`);
     }
 
     getProfile(id: string): Observable<Profile> {

@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
+import { routes } from './app.routes';
 
 describe('App', () => {
   beforeEach(async () => {
@@ -21,5 +22,13 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     expect(compiled.querySelector('router-outlet')).toBeTruthy();
     expect(compiled.querySelector('app-toast-outlet')).toBeTruthy();
+  });
+
+  it('redirects /player to /device', () => {
+    const playerRoute = routes.find((route) => route.path === 'player');
+
+    expect(playerRoute?.redirectTo).toBe('device');
+    expect(playerRoute?.pathMatch).toBe('full');
+    expect(playerRoute?.component).toBeUndefined();
   });
 });

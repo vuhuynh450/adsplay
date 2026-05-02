@@ -7,6 +7,7 @@ import type {
     PlayerProfile,
     PlayerProfileSummary,
     Profile,
+    ProfileOrientation,
     Video,
 } from '../types';
 import { slugify } from '../utils/slugify';
@@ -84,7 +85,7 @@ export const getDetailedProfileBySlug = async (profileSlug: string) => {
 export const saveProfile = async (input: {
     id?: string;
     name: string;
-    orientation: Profile['orientation'];
+    orientation: ProfileOrientation;
     videoIds: string[];
 }) => {
     const profiles = await dbRepository.listProfiles();
