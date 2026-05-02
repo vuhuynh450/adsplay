@@ -45,16 +45,14 @@ describe('PlayerSessionService orientation mapping', () => {
     setProfileOrientation('landscape');
 
     expect(service.getRotationDegrees()).toBe(0);
-    expect(service.getMediaWrapperStyle()).toEqual({
-      transform: 'rotate(0deg)',
-      'transform-origin': 'center center',
-    });
+    expect(service.getMediaWrapperTransform()).toBe('rotate(0deg)');
+    expect(service.getRotationDegrees()).toBe(0);
   });
 
   it('maps rotate90 to rotate(90deg)', () => {
     setProfileOrientation('rotate90');
 
     expect(service.getRotationDegrees()).toBe(90);
-    expect(service.getMediaWrapperStyle().transform).toBe('rotate(90deg)');
+    expect(service.getMediaWrapperTransform()).toBe('rotate(90deg)');
   });
 });

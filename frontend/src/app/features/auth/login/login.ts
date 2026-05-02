@@ -137,7 +137,8 @@ export class Login {
 
     this.authService.login(this.username, this.password).subscribe({
       next: () => {
-        this.router.navigate(['/admin']);
+        const path = this.authService.loginRedirectPath();
+        this.router.navigate([path]);
       },
       error: (err) => {
         this.error = getErrorMessage(err, 'Tài khoản hoặc mật khẩu không chính xác');

@@ -99,6 +99,29 @@ export interface PlayerDeviceBinding {
     profile: PlayerProfile;
 }
 
+export type PageKey = 'videos' | 'profiles' | 'devices' | 'system' | 'employees';
+
+export type UserRole = 'admin' | 'staff';
+
+export interface AuthLoginUser {
+    id: string;
+    username: string;
+    role: UserRole;
+    allowedPages: PageKey[];
+    mustChangePassword: boolean;
+}
+
+export interface EmployeeView {
+    id: string;
+    username: string;
+    role: 'staff';
+    isActive: boolean;
+    mustChangePassword: boolean;
+    allowedPages: PageKey[];
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface VideoPolicy {
     allowedMimeTypes: string[];
     mediaProcessingEnabled: boolean;
@@ -290,6 +313,37 @@ export class ApiService {
 
     getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[] }> {
         return this.http.get<{ online: boolean; uptime: number; localIps: string[] }>(`${this.apiUrl}/system/status`);
+    }
+
+    getEmployees(): Observable<EmployeeView[]> {
+        return this.http.get<EmployeeView[]>(`${this.apiUrl}/employees`);
+    }
+
+    createEmployee(payload: {
+        username: string;
+        password: string;
+        allowedPages: PageKey[];
+    }): Observable<EmployeeView> {
+        return this.http.post<EmployeeView>(`${this.apiUrl}/employees`, payload);
+    }
+
+    updateEmployeeAllowedPages(id: string, allowedPages: PageKey[]): Observable<EmployeeView> {
+        return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/pages`, { allowedPages });
+    }
+
+    updateEmployeeActiveStatus(id: string, isActive: boolean): Observable<EmployeeView> {
+        return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/active`, { isActive });
+    }
+
+    resetEmployeeFirstPassword(id: string): Observable<EmployeeView> {
+        return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/reset-first-password`, {});
+    }
+
+    changePasswordFirstLogin(newPassword: string): Observable<{ token: string; user: AuthLoginUser }> {
+        return this.http.post<{ token: string; user: AuthLoginUser }>(
+            `${this.apiUrl}/auth/change-password-first-login`,
+            { newPassword },
+        );
     }
 
     sendHeartbeat(profileSlug: string, playerAccessToken: string): Observable<any> {

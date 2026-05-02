@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, tap } from 'rxjs';
 import { Router } from '@angular/router';
+import type { AuthLoginUser } from './api.service';
 
 const TOKEN_STORAGE_KEY = 'token';
 
@@ -33,16 +34,68 @@ export class AuthService {
     private http = inject(HttpClient);
     private router = inject(Router);
     private tokenSubject = new BehaviorSubject<string | null>(readStoredToken());
+    private userSubject = new BehaviorSubject<AuthLoginUser | null>(null);
 
     isLoggedIn$ = new BehaviorSubject<boolean>(!!readStoredToken());
 
     login(username: string, password: string) {
-        return this.http.post<{ token: string }>('/api/auth/login', { username, password })
+        return this.http.post<{ token: string; user: AuthLoginUser }>('/api/auth/login', { username, password })
             .pipe(
                 tap(res => {
-                    this.setSession(res.token);
+                    this.setSession(res.token, res.user);
                 })
             );
+    }
+
+    currentUser() {
+        return this.userSubject.value;
+    }
+
+    isAdmin() {
+        return this.userSubject.value?.role === 'admin';
+    }
+
+    hasPageAccess(pageKey: AuthLoginUser['allowedPages'][number]) {
+        const user = this.userSubject.value;
+        if (!user) {
+            return false;
+        }
+
+        return user.role === 'admin' || user.allowedPages.includes(pageKey);
+    }
+
+    requiresFirstLoginPasswordChange() {
+        return Boolean(this.userSubject.value?.mustChangePassword);
+    }
+
+    isActiveSessionForPage(pageKey: AuthLoginUser['allowedPages'][number]) {
+        return this.isLoggedIn && this.hasPageAccess(pageKey);
+    }
+
+    loginRedirectPath() {
+        const user = this.userSubject.value;
+        if (!user) {
+            return '/login';
+        }
+
+        if (user.mustChangePassword) {
+            return '/auth/change-password-first-login';
+        }
+
+        return '/admin';
+    }
+
+    updateSessionUser(user: AuthLoginUser) {
+        const token = this.getToken();
+        if (!token) {
+            return;
+        }
+
+        this.setSession(token, user);
+    }
+
+    clearSessionAndStay() {
+        this.clearSession();
     }
 
     logout() {
@@ -63,14 +116,15 @@ export class AuthService {
         return !!this.getToken();
     }
 
-    private setSession(token: string | null) {
+    private setSession(token: string | null, user?: AuthLoginUser | null) {
         writeStoredToken(token);
         this.tokenSubject.next(token);
         this.isLoggedIn$.next(!!token);
+        this.userSubject.next(user || null);
     }
 
     private clearSession() {
-        this.setSession(null);
+        this.setSession(null, null);
     }
 
     private navigateToLogin() {
