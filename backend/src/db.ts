@@ -283,6 +283,20 @@ export const dbRepository = {
 
         return { ...newUser };
     },
+    async updateUser(id: string, updater: (user: User) => void) {
+        let updatedUser: User | null = null;
+        await mutate((db) => {
+            const target = db.users.find((user) => user.id === id);
+            if (!target) {
+                return;
+            }
+
+            updater(target);
+            target.updatedAt = new Date().toISOString();
+            updatedUser = { ...target };
+        });
+        return updatedUser;
+    },
     async findVideoById(id: string) {
         return dbCache.videos.find((video) => video.id === id) || null;
     },

@@ -152,6 +152,43 @@ test('inactive staff login returns ACCOUNT_INACTIVE', async () => {
   assert.equal(response.body.error.code, 'ACCOUNT_INACTIVE');
 });
 
+test('first login password change clears mustChangePassword flag', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('temp123', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_first_login',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: true,
+    allowedPages: ['videos'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_first_login',
+    password: 'temp123',
+  });
+
+  assert.equal(loginResponse.status, 200);
+  assert.equal(loginResponse.body.user.mustChangePassword, true);
+
+  const changePasswordResponse = await request(app)
+    .post('/api/auth/change-password-first-login')
+    .set('Authorization', `Bearer ${loginResponse.body.token}`)
+    .send({ newPassword: 'newpass456' });
+
+  assert.equal(changePasswordResponse.status, 200);
+
+  const loginAgainResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_first_login',
+    password: 'newpass456',
+  });
+
+  assert.equal(loginAgainResponse.status, 200);
+  assert.equal(loginAgainResponse.body.user.mustChangePassword, false);
+});
+
 test('auth and system status flow works', async () => {
   const { authHeader, token } = await loginAsAdmin();
 

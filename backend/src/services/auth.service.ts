@@ -122,6 +122,24 @@ export const verifyAdminToken = (token: string) => {
     return payload;
 };
 
+export const changePasswordFirstLogin = async (userId: string, newPassword: string) => {
+    const user = await dbRepository.findUserByUsername(userId);
+    if (!user) {
+        throw new AppError(404, 'USER_NOT_FOUND', 'User not found.');
+    }
+
+    if (!user.mustChangePassword) {
+        throw new AppError(400, 'PASSWORD_CHANGE_NOT_REQUIRED', 'Password change is not required.');
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    await dbRepository.updateUser(user.id, (draft) => {
+        draft.passwordHash = newPasswordHash;
+        draft.mustChangePassword = false;
+    });
+};
+
 export const createProfileHeartbeatToken = (profile: { id: string; name: string }) =>
     jwt.sign(
         {
