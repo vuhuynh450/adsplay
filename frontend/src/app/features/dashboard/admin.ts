@@ -17,7 +17,7 @@ import { ConfirmModal } from '../../shared/ui/confirm-modal/confirm-modal';
 import { DashboardStore, SaveProfilePayload } from './dashboard.store';
 import type { PageKey } from '../../constants/page-access';
 
-type AdminPage = 'videos' | 'profiles' | 'devices' | 'system';
+type AdminPage = 'videos' | 'profiles' | 'devices' | 'system' | 'employees';
 
 interface MenuItem {
   key: AdminPage;
@@ -31,6 +31,7 @@ const ADMIN_MENU_ITEMS: MenuItem[] = [
   { key: 'profiles', label: 'Quản Lý Màn Hình', route: '/admin/profiles', description: 'Cấu hình màn hình phát' },
   { key: 'devices', label: 'Thiết Bị TV', route: '/admin/devices', description: 'Gán TV vào màn hình phát' },
   { key: 'system', label: 'Hệ Thống', route: '/admin/system', description: 'Thông tin và trạng thái hệ thống' },
+  { key: 'employees', label: 'Nhân Viên', route: '/admin/employees', description: 'Quản lý tài khoản nhân viên' },
 ];
 
 @Component({
