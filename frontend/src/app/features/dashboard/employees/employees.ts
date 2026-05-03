@@ -124,6 +124,12 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
                             <td class="px-4 py-3 text-center">
                                 <div class="flex items-center justify-center gap-2">
                                     <button
+                                        (click)="openEditModal(emp)"
+                                        class="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                        title="Chỉnh sửa nhân viên">
+                                        Sửa
+                                    </button>
+                                    <button
                                         (click)="resetPassword(emp)"
                                         class="px-3 py-1.5 text-xs font-medium text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
                                         title="Yêu cầu đổi mật khẩu">
@@ -137,6 +143,74 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Modal -->
+    <div *ngIf="showEditModal()" class="fixed inset-0 z-[120] flex items-center justify-center p-4 animate-fade-in font-sans">
+        <div class="absolute inset-0 bg-slate-900/70 backdrop-blur-sm" (click)="closeEditModal()"></div>
+        <div class="relative w-full max-w-lg bg-white dark:bg-brand-surface rounded-2xl border border-slate-200 dark:border-white/10 shadow-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-bold text-slate-800 dark:text-white">Chỉnh Sửa Nhân Viên</h3>
+                <button (click)="closeEditModal()" class="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 transition-colors">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 dark:text-slate-300 mb-1">Tài khoản</label>
+                    <input
+                        type="text"
+                        [(ngModel)]="editUsername"
+                        placeholder="Nhập tên tài khoản"
+                        class="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-brand-primary/20 text-slate-900 dark:text-white">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                        Mật khẩu mới
+                        <span class="text-slate-400 font-normal">(để trống nếu không đổi)</span>
+                    </label>
+                    <input
+                        type="password"
+                        [(ngModel)]="editPassword"
+                        placeholder="Nhập mật khẩu mới"
+                        class="w-full px-4 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl outline-none focus:ring-2 focus:ring-brand-primary/20 text-slate-900 dark:text-white">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-slate-600 dark:text-slate-300 mb-2">Quyền truy cập trang</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label *ngFor="let page of allPageKeys" class="flex items-center gap-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                [checked]="editAllowedPages.includes(page)"
+                                (change)="toggleEditPage(page)"
+                                class="w-4 h-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary">
+                            <span class="text-sm text-slate-700 dark:text-slate-300">{{ pageLabel(page) }}</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div *ngIf="editError" class="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">{{ editError }}</div>
+
+            <div class="flex justify-end gap-3 pt-2">
+                <button
+                    (click)="closeEditModal()"
+                    class="px-4 py-2.5 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-colors">
+                    Hủy
+                </button>
+                <button
+                    (click)="saveEdit()"
+                    [disabled]="editing()"
+                    class="px-6 py-2.5 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50">
+                    {{ editing() ? 'Đang lưu...' : 'Lưu Thay Đổi' }}
+                </button>
             </div>
         </div>
     </div>
@@ -154,6 +228,14 @@ export class Employees implements OnInit {
     newUsername = '';
     newPassword = '';
     newAllowedPages: PageKey[] = ['videos'];
+
+    showEditModal = signal(false);
+    editing = signal(false);
+    editError = '';
+    editEmployeeId = '';
+    editUsername = '';
+    editPassword = '';
+    editAllowedPages: PageKey[] = [];
 
     readonly allPageKeys = PAGE_KEYS;
 
@@ -221,6 +303,73 @@ export class Employees implements OnInit {
             this.newAllowedPages = current.filter((p) => p !== page);
         } else {
             this.newAllowedPages = [...current, page];
+        }
+    }
+
+    openEditModal(emp: EmployeeView) {
+        this.editEmployeeId = emp.id;
+        this.editUsername = emp.username;
+        this.editPassword = '';
+        this.editAllowedPages = [...emp.allowedPages];
+        this.editError = '';
+        this.showEditModal.set(true);
+    }
+
+    closeEditModal() {
+        this.showEditModal.set(false);
+        this.editEmployeeId = '';
+        this.editUsername = '';
+        this.editPassword = '';
+        this.editAllowedPages = [];
+        this.editError = '';
+    }
+
+    saveEdit() {
+        if (!this.editUsername.trim()) {
+            this.editError = 'Vui lòng nhập tên tài khoản.';
+            return;
+        }
+
+        if (this.editAllowedPages.length === 0) {
+            this.editError = 'Vui lòng chọn ít nhất một quyền truy cập.';
+            return;
+        }
+
+        this.editing.set(true);
+        this.editError = '';
+
+        const payload: {
+            username?: string;
+            password?: string;
+            allowedPages?: PageKey[];
+        } = {};
+
+        payload.username = this.editUsername.trim();
+        payload.allowedPages = this.editAllowedPages;
+
+        if (this.editPassword.trim()) {
+            payload.password = this.editPassword.trim();
+        }
+
+        this.api.updateEmployee(this.editEmployeeId, payload).subscribe({
+            next: () => {
+                this.editing.set(false);
+                this.closeEditModal();
+                this.loadEmployees();
+            },
+            error: (err) => {
+                this.editing.set(false);
+                this.editError = getErrorMessage(err, 'Không thể cập nhật nhân viên.');
+            },
+        });
+    }
+
+    toggleEditPage(page: PageKey) {
+        const current = this.editAllowedPages;
+        if (current.includes(page)) {
+            this.editAllowedPages = current.filter((p) => p !== page);
+        } else {
+            this.editAllowedPages = [...current, page];
         }
     }
 

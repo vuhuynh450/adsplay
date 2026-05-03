@@ -6,6 +6,7 @@ import {
     createEmployee,
     listEmployees,
     resetEmployeeFirstPassword,
+    updateEmployee,
     updateEmployeeActiveStatus,
     updateEmployeeAllowedPages,
 } from '../services/employee.service';
@@ -83,6 +84,24 @@ employeesRouter.patch(
     requireAdminOnly,
     asyncHandler(async (req, res) => {
         const employee = await resetEmployeeFirstPassword(readEmployeeId(req.params.id));
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json(employee);
+    }),
+);
+
+employeesRouter.patch(
+    '/:id',
+    authenticateToken,
+    requireAdminOnly,
+    asyncHandler(async (req, res) => {
+        const employee = await updateEmployee(
+            readEmployeeId(req.params.id),
+            {
+                username: req.body?.username || undefined,
+                password: req.body?.password || undefined,
+                allowedPages: req.body?.allowedPages || undefined,
+            },
+        );
         res.setHeader('Cache-Control', 'private, no-store');
         res.json(employee);
     }),

@@ -331,6 +331,14 @@ export class ApiService {
         return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/pages`, { allowedPages });
     }
 
+    updateEmployee(id: string, payload: {
+        username?: string;
+        password?: string;
+        allowedPages?: PageKey[];
+    }): Observable<EmployeeView> {
+        return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}`, payload);
+    }
+
     updateEmployeeActiveStatus(id: string, isActive: boolean): Observable<EmployeeView> {
         return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/active`, { isActive });
     }

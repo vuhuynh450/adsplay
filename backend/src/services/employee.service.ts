@@ -112,3 +112,40 @@ export const resetEmployeeFirstPassword = async (id: string) => {
 
     return toEmployeeView(updated);
 };
+
+export const updateEmployee = async (id: string, input: {
+    username?: string;
+    password?: string;
+    allowedPages?: PageKey[];
+}) => {
+    const existing = await getStaffUserById(id);
+    if (!existing) {
+        throw new AppError(404, 'EMPLOYEE_NOT_FOUND', 'Employee not found.');
+    }
+
+    if (input.username && input.username !== existing.username) {
+        const existed = await dbRepository.findUserByUsername(input.username);
+        if (existed) {
+            throw new AppError(409, 'USER_ALREADY_EXISTS', 'Username already exists.');
+        }
+    }
+
+    const updated = await dbRepository.updateUser(id, (draft) => {
+        if (input.username) {
+            draft.username = input.username;
+        }
+        if (input.password) {
+            draft.passwordHash = bcrypt.hashSync(input.password, 10);
+            draft.mustChangePassword = false;
+        }
+        if (input.allowedPages) {
+            draft.allowedPages = input.allowedPages;
+        }
+    });
+
+    if (!updated) {
+        throw new AppError(404, 'EMPLOYEE_NOT_FOUND', 'Employee not found.');
+    }
+
+    return toEmployeeView(updated);
+};
