@@ -5,6 +5,7 @@ import { Router } from '@angular/router';
 import type { AuthLoginUser } from './api.service';
 
 const TOKEN_STORAGE_KEY = 'token';
+const USER_STORAGE_KEY = 'user';
 
 const readStoredToken = () => {
     if (typeof localStorage === 'undefined') {
@@ -27,6 +28,36 @@ const writeStoredToken = (token: string | null) => {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
 };
 
+const readStoredUser = (): AuthLoginUser | null => {
+    if (typeof localStorage === 'undefined') {
+        return null;
+    }
+
+    const userJson = localStorage.getItem(USER_STORAGE_KEY);
+    if (!userJson) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(userJson) as AuthLoginUser;
+    } catch {
+        return null;
+    }
+};
+
+const writeStoredUser = (user: AuthLoginUser | null) => {
+    if (typeof localStorage === 'undefined') {
+        return;
+    }
+
+    if (!user) {
+        localStorage.removeItem(USER_STORAGE_KEY);
+        return;
+    }
+
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+};
+
 @Injectable({
     providedIn: 'root'
 })
@@ -34,7 +65,7 @@ export class AuthService {
     private http = inject(HttpClient);
     private router = inject(Router);
     private tokenSubject = new BehaviorSubject<string | null>(readStoredToken());
-    private userSubject = new BehaviorSubject<AuthLoginUser | null>(null);
+    private userSubject = new BehaviorSubject<AuthLoginUser | null>(readStoredUser());
 
     isLoggedIn$ = new BehaviorSubject<boolean>(!!readStoredToken());
 
@@ -122,6 +153,7 @@ export class AuthService {
 
     private setSession(token: string | null, user?: AuthLoginUser | null) {
         writeStoredToken(token);
+        writeStoredUser(user || null);
         this.tokenSubject.next(token);
         this.isLoggedIn$.next(!!token);
         this.userSubject.next(user || null);
