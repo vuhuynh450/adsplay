@@ -917,7 +917,7 @@ test('poster and HLS asset routes serve generated media artifacts when metadata 
   assert.equal(segmentResponse.headers['content-type'], 'video/mp2t');
 });
 
-test('staff with videos permission can access /api/videos but cannot access /api/system', async () => {
+test('staff with videos permission can access /api/videos and /api/system', async () => {
   const bcrypt = require('bcryptjs');
   const passwordHash = await bcrypt.hash('staff-videos-only', 10);
 
@@ -949,8 +949,9 @@ test('staff with videos permission can access /api/videos but cannot access /api
     .get('/api/system/status')
     .set('Authorization', token);
 
-  assert.equal(systemResponse.status, 403);
-  assert.equal(systemResponse.body.error.code, 'PAGE_FORBIDDEN');
+  assert.equal(systemResponse.status, 200);
+  assert.ok(systemResponse.body.online);
+  assert.ok(Array.isArray(systemResponse.body.localIps));
 });
 
 test('locked staff is blocked on next request even with valid token', async () => {
