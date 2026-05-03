@@ -30,10 +30,21 @@ export const authInterceptor: HttpInterceptorFn = (req: HttpRequest<unknown>, ne
             if (
                 !isPublicRequest &&
                 !isAuthRequest &&
-                error instanceof HttpErrorResponse &&
-                (error.status === 401 || error.status === 403)
+                error instanceof HttpErrorResponse
             ) {
-                authService.handleAuthFailure();
+                // 401 = token invalid/expired → logout
+                if (error.status === 401) {
+                    authService.handleAuthFailure();
+                }
+                
+                // 403 with PAGE_FORBIDDEN = staff lacks page permission → don't logout
+                // 403 with other codes (AUTH_INVALID, ACCOUNT_INACTIVE) → logout
+                if (error.status === 403) {
+                    const errorCode = error.error?.error?.code || error.error?.code;
+                    if (errorCode !== 'PAGE_FORBIDDEN') {
+                        authService.handleAuthFailure();
+                    }
+                }
             }
 
             return throwError(() => error);

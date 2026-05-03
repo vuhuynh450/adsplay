@@ -14,6 +14,7 @@ import {
 import { ToastService } from '../../shared/services/toast.service';
 import { getErrorMessage } from '../../shared/utils/error-message';
 import { ResumableUploadService } from './resumable-upload.service';
+import { AuthService } from '../../services/auth.service';
 
 export interface SaveProfilePayload {
   id?: string;
@@ -25,6 +26,7 @@ export interface SaveProfilePayload {
 @Injectable()
 export class DashboardStore {
   private readonly api = inject(ApiService);
+  private readonly authService = inject(AuthService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly resumableUpload = inject(ResumableUploadService);
   private readonly toastService = inject(ToastService);
@@ -52,22 +54,51 @@ export class DashboardStore {
   refreshAll() {
     this.loading.set(true);
 
-    forkJoin({
-      devices: this.api.getDevices(),
-      pendingDeviceRegistrations: this.api.getPendingDeviceRegistrations(),
-      profiles: this.api.getProfiles(true),
-      videos: this.api.getVideos(true),
-    })
+    const user = this.authService.currentUser();
+    const hasVideosAccess = user?.role === 'admin' || user?.allowedPages.includes('videos');
+    const hasProfilesAccess = user?.role === 'admin' || user?.allowedPages.includes('profiles');
+    const hasDevicesAccess = user?.role === 'admin' || user?.allowedPages.includes('devices');
+
+    const requests: Record<string, any> = {};
+
+    if (hasVideosAccess) {
+      requests['videos'] = this.api.getVideos(true);
+    }
+
+    if (hasProfilesAccess) {
+      requests['profiles'] = this.api.getProfiles(true);
+    }
+
+    if (hasDevicesAccess) {
+      requests['devices'] = this.api.getDevices();
+      requests['pendingDeviceRegistrations'] = this.api.getPendingDeviceRegistrations();
+    }
+
+    // If no permissions, just set loading to false
+    if (Object.keys(requests).length === 0) {
+      this.loading.set(false);
+      return;
+    }
+
+    forkJoin(requests)
       .pipe(
         finalize(() => this.loading.set(false)),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ devices, pendingDeviceRegistrations, profiles, videos }) => {
-          this.devices.set(devices);
-          this.pendingDeviceRegistrations.set(pendingDeviceRegistrations);
-          this.profiles.set(profiles);
-          this.videos.set(videos);
+        next: (results: Record<string, any>) => {
+          if (results['videos']) {
+            this.videos.set(results['videos'] as Video[]);
+          }
+          if (results['profiles']) {
+            this.profiles.set(results['profiles'] as Profile[]);
+          }
+          if (results['devices']) {
+            this.devices.set(results['devices'] as AdminDevice[]);
+          }
+          if (results['pendingDeviceRegistrations']) {
+            this.pendingDeviceRegistrations.set(results['pendingDeviceRegistrations'] as PendingDeviceRegistration[]);
+          }
         },
         error: (error) => {
           this.toastService.show(getErrorMessage(error, 'Không thể tải dữ liệu dashboard.'), 'error');
