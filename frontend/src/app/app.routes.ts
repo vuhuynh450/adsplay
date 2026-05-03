@@ -38,7 +38,7 @@ export const routes: Routes = [
     },
     {
         path: 'admin/employees',
-        component: Employees,
+        component: Admin,
         canActivate: [authGuard, firstLoginGuard, adminOnlyGuard],
         data: { pageKey: 'employees' },
     },

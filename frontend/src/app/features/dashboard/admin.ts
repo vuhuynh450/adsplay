@@ -15,6 +15,7 @@ import {
 } from './components/device-manager/device-manager';
 import { ConfirmModal } from '../../shared/ui/confirm-modal/confirm-modal';
 import { DashboardStore, SaveProfilePayload } from './dashboard.store';
+import { Employees } from './employees/employees';
 import type { PageKey } from '../../constants/page-access';
 
 type AdminPage = 'videos' | 'profiles' | 'devices' | 'system' | 'employees';
@@ -36,7 +37,7 @@ const ADMIN_MENU_ITEMS: MenuItem[] = [
 
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule, RouterModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal],
+  imports: [CommonModule, RouterModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal, Employees],
   providers: [DashboardStore],
   templateUrl: './admin.html',
   styleUrl: './admin.css',

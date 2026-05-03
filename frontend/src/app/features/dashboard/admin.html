@@ -236,6 +236,10 @@
                     </div>
                 </div>
             </div>
+
+            <div *ngIf="activeTab() === 'employees'" class="animate-fade-in h-full pb-20">
+                <app-employees></app-employees>
+            </div>
             }
         </div>
     </main>
