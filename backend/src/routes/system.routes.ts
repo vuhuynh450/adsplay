@@ -9,6 +9,6 @@ systemRouter.get(
     '/status',
     authenticateToken,
     asyncHandler(async (_req, res) => {
-        res.json(getSystemStatus());
+        res.json(await getSystemStatus());
     }),
 );
