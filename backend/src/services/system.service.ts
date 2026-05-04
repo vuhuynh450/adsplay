@@ -1,10 +1,17 @@
 import os from 'node:os';
-import { getR2Stats } from './r2-stats.service';
+import { getR2Stats, type R2Stats } from './r2-stats.service';
 import { getConfig } from '../config';
 
 const config = getConfig();
 
-export const getSystemStatus = async () => {
+interface SystemStatus {
+    localIps: string[];
+    online: boolean;
+    uptime: number;
+    r2?: R2Stats;
+}
+
+export const getSystemStatus = async (): Promise<SystemStatus> => {
     const nets = os.networkInterfaces();
     const localIps: string[] = [];
 
@@ -16,7 +23,7 @@ export const getSystemStatus = async () => {
         }
     }
 
-    const status: any = {
+    const status: SystemStatus = {
         localIps,
         online: true,
         uptime: process.uptime(),
@@ -25,8 +32,12 @@ export const getSystemStatus = async () => {
     if (config.r2.enabled) {
         try {
             status.r2 = await getR2Stats();
-        } catch (error) {
-            console.error('Failed to include R2 stats in system status:', error);
+        } catch (error: any) {
+            console.error('Failed to include R2 stats in system status:', {
+                message: error.message,
+                code: error.code,
+                name: error.name,
+            });
         }
     }
 
