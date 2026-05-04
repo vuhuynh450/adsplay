@@ -50,6 +50,15 @@ export interface PlayerProfileSummary {
     videoCount: number;
 }
 
+export interface R2Stats {
+    enabled: boolean;
+    bucket: string;
+    totalObjects: number;
+    totalSizeBytes: number;
+    lastUpdated: string;
+    error?: string;
+}
+
 export interface PlayerProfile {
     name: string;
     orientation: ProfileOrientation;
@@ -311,8 +320,8 @@ export class ApiService {
         return this.http.delete(`${this.apiUrl}/profiles/${id}`);
     }
 
-    getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[] }> {
-        return this.http.get<{ online: boolean; uptime: number; localIps: string[] }>(`${this.apiUrl}/system/status`);
+    getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[]; r2?: R2Stats }> {
+        return this.http.get<{ online: boolean; uptime: number; localIps: string[]; r2?: R2Stats }>(`${this.apiUrl}/system/status`);
     }
 
     getEmployees(): Observable<EmployeeView[]> {

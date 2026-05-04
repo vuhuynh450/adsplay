@@ -9,6 +9,7 @@ import {
   PendingDeviceRegistration,
   Profile,
   ProfileOrientation,
+  R2Stats,
   Video,
 } from '../../services/api.service';
 import { ToastService } from '../../shared/services/toast.service';
@@ -41,7 +42,7 @@ export class DashboardStore {
   readonly uploadStatusLabel = signal('Sẵn sàng tải lên');
   readonly uploadTarget = signal<'local' | 'r2'>('local');
   readonly isSystemOnline = signal(true);
-  readonly systemInfo = signal<{ uptime: number; localIps: string[] } | null>(null);
+  readonly systemInfo = signal<{ uptime: number; localIps: string[]; r2?: R2Stats } | null>(null);
   readonly maxUploadSizeBytes = signal(2 * 1024 * 1024 * 1024);
   readonly activePlayerCount = computed(() => this.profiles().filter((profile) => this.isOnline(profile.lastSeen)).length);
 
@@ -126,8 +127,25 @@ export class DashboardStore {
         }
 
         this.isSystemOnline.set(status.online);
-        this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
+        this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime, r2: status.r2 });
       });
+  }
+
+  refreshSystemStatus() {
+    this.api.getSystemStatus().pipe(
+      catchError(() => {
+        this.isSystemOnline.set(false);
+        return of(null);
+      }),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe((status) => {
+      if (!status) {
+        return;
+      }
+
+      this.isSystemOnline.set(status.online);
+      this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime, r2: status.r2 });
+    });
   }
 
   async uploadMedia(file: File, storageTarget: 'local' | 'r2' = this.uploadTarget()) {
