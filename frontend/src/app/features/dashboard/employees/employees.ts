@@ -21,8 +21,11 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
             <button
                 (click)="showCreateForm.set(!showCreateForm())"
                 class="px-4 py-2.5 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-semibold text-sm transition-all active:scale-[0.98] flex items-center gap-2">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg *ngIf="!showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                </svg>
+                <svg *ngIf="showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
                 {{ showCreateForm() ? 'Đóng' : 'Thêm Nhân Viên' }}
             </button>
