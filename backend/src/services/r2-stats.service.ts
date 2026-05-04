@@ -58,11 +58,7 @@ const fetchR2StatsFromAPI = async (): Promise<R2Stats> => {
     let totalSizeBytes = 0;
     let continuationToken: string | undefined;
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('R2 API timeout')), API_TIMEOUT_MS);
-    });
-
-    try {
+    const fetchAllPages = async (): Promise<R2Stats> => {
         const fetchPage = async (): Promise<void> => {
             const command = new ListObjectsV2Command({
                 Bucket: config.r2.bucket,
@@ -70,10 +66,7 @@ const fetchR2StatsFromAPI = async (): Promise<R2Stats> => {
                 ContinuationToken: continuationToken,
             });
 
-            const response = await Promise.race([
-                client.send(command),
-                timeoutPromise,
-            ]);
+            const response = await client.send(command);
 
             if (response.Contents) {
                 totalObjects += response.Contents.length;
@@ -95,6 +88,17 @@ const fetchR2StatsFromAPI = async (): Promise<R2Stats> => {
             totalSizeBytes,
             lastUpdated: new Date().toISOString(),
         };
+    };
+
+    try {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('R2 API timeout')), API_TIMEOUT_MS);
+        });
+
+        return await Promise.race([
+            fetchAllPages(),
+            timeoutPromise,
+        ]);
     } catch (error: any) {
         console.error('Failed to fetch R2 stats:', error);
         
