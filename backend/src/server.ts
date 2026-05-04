@@ -26,10 +26,10 @@ server.on('error', (error: NodeJS.ErrnoException) => {
     process.exit(1);
 });
 
-server.listen(config.port, '0.0.0.0', () => {
+server.listen(config.port, '0.0.0.0', async () => {
     logInfo('server.started', { port: config.port });
 
-    const status = getSystemStatus();
+    const status = await getSystemStatus();
     for (const address of status.localIps) {
         logInfo('server.available', { url: `http://${address}:${config.port}` });
     }
