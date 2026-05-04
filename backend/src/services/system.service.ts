@@ -15,6 +15,6 @@ export const getSystemStatus = () => {
     return {
         localIps,
         online: true,
-        uptime: os.uptime(),
+        uptime: process.uptime(),
     };
 };
