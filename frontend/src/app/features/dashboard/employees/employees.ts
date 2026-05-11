@@ -11,24 +11,33 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
     standalone: true,
     imports: [CommonModule, FormsModule],
     template: `
-    <div class="p-4 md:p-6 space-y-6 animate-fade-in">
+    <div class="py-4 md:py-6 space-y-6 animate-fade-in">
         <!-- Header -->
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between gap-4">
             <div>
                 <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Quản Lý Nhân Viên</h2>
                 <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Tạo và quản lý tài khoản nhân viên</p>
             </div>
-            <button
-                (click)="showCreateForm.set(!showCreateForm())"
-                class="px-4 py-2.5 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-semibold text-sm transition-all active:scale-[0.98] flex items-center gap-2">
-                <svg *ngIf="!showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                </svg>
-                <svg *ngIf="showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                {{ showCreateForm() ? 'Đóng' : 'Thêm Nhân Viên' }}
-            </button>
+            <div class="flex items-center gap-2">
+                <button
+                    type="button"
+                    (click)="deleteSelectedEmployees()"
+                    [disabled]="!hasSelectedEmployees()"
+                    class="px-4 py-2.5 border border-red-200 text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-300 dark:hover:bg-red-500/10 rounded-xl font-semibold text-sm transition-all disabled:cursor-not-allowed disabled:opacity-50">
+                    Xóa đã chọn ({{ getSelectedEmployeeCount() }})
+                </button>
+                <button
+                    (click)="showCreateForm.set(!showCreateForm())"
+                    class="px-4 py-2.5 bg-brand-primary hover:bg-brand-secondary text-white rounded-xl font-semibold text-sm transition-all active:scale-[0.98] flex items-center gap-2">
+                    <svg *ngIf="!showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <svg *ngIf="showCreateForm()" class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    {{ showCreateForm() ? 'Đóng' : 'Thêm Nhân Viên' }}
+                </button>
+            </div>
         </div>
 
         <!-- Create Form -->
@@ -74,6 +83,8 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
             </button>
         </div>
 
+        <div *ngIf="formError" class="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-xl">{{ formError }}</div>
+
         <!-- Loading -->
         <div *ngIf="loading()" class="flex items-center justify-center py-12">
             <div class="w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full animate-spin"></div>
@@ -85,6 +96,13 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
                 <table class="w-full text-sm">
                     <thead class="bg-slate-50 dark:bg-white/5">
                         <tr>
+                            <th class="text-left px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">
+                                <input
+                                    type="checkbox"
+                                    class="w-4 h-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                                    [checked]="areAllEmployeesSelected()"
+                                    (change)="toggleAllEmployeesFromEvent($event)">
+                            </th>
                             <th class="text-left px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">Tài khoản</th>
                             <th class="text-left px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">Quyền truy cập</th>
                             <th class="text-center px-4 py-3 font-semibold text-slate-600 dark:text-slate-300">Trạng thái</th>
@@ -94,6 +112,13 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
                     </thead>
                     <tbody class="divide-y divide-slate-100 dark:divide-white/5">
                         <tr *ngFor="let emp of employees()" class="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                            <td class="px-4 py-3">
+                                <input
+                                    type="checkbox"
+                                    class="w-4 h-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                                    [checked]="isEmployeeSelected(emp.id)"
+                                    (change)="toggleEmployeeSelectionFromEvent(emp.id, $event)">
+                            </td>
                             <td class="px-4 py-3">
                                 <div class="font-medium text-slate-800 dark:text-slate-200">{{ emp.username }}</div>
                                 <div class="text-xs text-slate-400">{{ emp.createdAt | date:'shortDate' }}</div>
@@ -142,7 +167,7 @@ import { getErrorMessage } from '../../../shared/utils/error-message';
                             </td>
                         </tr>
                         <tr *ngIf="employees().length === 0">
-                            <td colspan="5" class="px-4 py-8 text-center text-slate-400">Chưa có nhân viên nào</td>
+                            <td colspan="6" class="px-4 py-8 text-center text-slate-400">Chưa có nhân viên nào</td>
                         </tr>
                     </tbody>
                 </table>
@@ -227,6 +252,9 @@ export class Employees implements OnInit {
     showCreateForm = signal(false);
     creating = signal(false);
     createError = '';
+    formError = '';
+
+    private readonly selectedEmployeeIds = new Set<string>();
 
     newUsername = '';
     newPassword = '';
@@ -251,12 +279,98 @@ export class Employees implements OnInit {
         this.api.getEmployees().subscribe({
             next: (list) => {
                 this.employees.set(list);
+                this.pruneSelectedEmployees();
                 this.loading.set(false);
             },
             error: () => {
                 this.loading.set(false);
             },
         });
+    }
+
+    isEmployeeSelected(employeeId: string) {
+        return this.selectedEmployeeIds.has(employeeId);
+    }
+
+    hasSelectedEmployees() {
+        return this.selectedEmployeeIds.size > 0;
+    }
+
+    getSelectedEmployeeCount() {
+        return this.selectedEmployeeIds.size;
+    }
+
+    areAllEmployeesSelected() {
+        const employees = this.employees();
+        return employees.length > 0 && employees.every((employee) => this.selectedEmployeeIds.has(employee.id));
+    }
+
+    setEmployeeSelected(employeeId: string, selected: boolean) {
+        if (selected) {
+            this.selectedEmployeeIds.add(employeeId);
+            return;
+        }
+
+        this.selectedEmployeeIds.delete(employeeId);
+    }
+
+    setAllEmployeesSelected(selected: boolean) {
+        if (!selected) {
+            this.selectedEmployeeIds.clear();
+            return;
+        }
+
+        for (const employee of this.employees()) {
+            this.selectedEmployeeIds.add(employee.id);
+        }
+    }
+
+    toggleEmployeeSelectionFromEvent(employeeId: string, event: Event) {
+        const target = event.target as HTMLInputElement | null;
+        this.setEmployeeSelected(employeeId, !!target?.checked);
+    }
+
+    toggleAllEmployeesFromEvent(event: Event) {
+        const target = event.target as HTMLInputElement | null;
+        this.setAllEmployeesSelected(!!target?.checked);
+    }
+
+    deleteSelectedEmployees() {
+        const employeeIds = this.employees()
+            .filter((employee) => this.selectedEmployeeIds.has(employee.id))
+            .map((employee) => employee.id);
+
+        if (!employeeIds.length) {
+            this.formError = 'Chọn ít nhất 1 nhân viên để xóa.';
+            return;
+        }
+
+        this.formError = '';
+        if (typeof window !== 'undefined') {
+            const accepted = window.confirm(`Xóa ${employeeIds.length} nhân viên đã chọn?`);
+            if (!accepted) {
+                return;
+            }
+        }
+
+        this.api.deleteEmployeesBulk(employeeIds).subscribe({
+            next: () => {
+                this.selectedEmployeeIds.clear();
+                this.loadEmployees();
+            },
+            error: (err) => {
+                this.formError = getErrorMessage(err, 'Không thể xóa nhân viên đã chọn.');
+            },
+        });
+    }
+
+    private pruneSelectedEmployees() {
+        const validEmployeeIds = new Set(this.employees().map((employee) => employee.id));
+        for (const selectedEmployeeId of this.selectedEmployeeIds) {
+            if (!validEmployeeIds.has(selectedEmployeeId)) {
+                this.selectedEmployeeIds.delete(selectedEmployeeId);
+            }
+        }
     }
 
     createEmployee() {

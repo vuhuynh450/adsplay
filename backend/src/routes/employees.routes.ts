@@ -4,17 +4,30 @@ import { authenticateToken } from '../middleware/auth';
 import { requireAdminOnly } from '../middleware/page-access';
 import {
     createEmployee,
+    deleteEmployeesBulk,
     listEmployees,
     resetEmployeeFirstPassword,
     updateEmployee,
     updateEmployeeActiveStatus,
     updateEmployeeAllowedPages,
 } from '../services/employee.service';
-import { requireAllowedPages, requireNonEmptyString } from '../utils/validation';
+import { requireAllowedPages, requireNonEmptyString, requireStringArray } from '../utils/validation';
 
 export const employeesRouter = Router();
 
 const readEmployeeId = (value: unknown) => requireNonEmptyString(value, 'id', 120);
+
+const readEmployeeIds = (value: unknown) => {
+    const ids = requireStringArray(value, 'employeeIds')
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+    if (!ids.length) {
+        throw new AppError(400, 'VALIDATION_ERROR', 'employeeIds is required.');
+    }
+
+    return ids;
+};
 
 const readIsActive = (value: unknown) => {
     if (typeof value !== 'boolean') {
@@ -47,6 +60,17 @@ employeesRouter.post(
 
         res.setHeader('Cache-Control', 'private, no-store');
         res.json(employee);
+    }),
+);
+
+employeesRouter.delete(
+    '/',
+    authenticateToken,
+    requireAdminOnly,
+    asyncHandler(async (req, res) => {
+        const result = await deleteEmployeesBulk(readEmployeeIds(req.body?.employeeIds));
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json(result);
     }),
 );
 

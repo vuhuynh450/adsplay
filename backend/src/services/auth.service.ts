@@ -122,8 +122,8 @@ export const verifyAdminToken = (token: string) => {
     return payload;
 };
 
-export const changePasswordFirstLogin = async (userId: string, newPassword: string) => {
-    const user = await dbRepository.findUserByUsername(userId);
+export const changePasswordFirstLogin = async (username: string, newPassword: string) => {
+    const user = await dbRepository.findUserByUsername(username);
     if (!user) {
         throw new AppError(404, 'USER_NOT_FOUND', 'User not found.');
     }
@@ -134,10 +134,16 @@ export const changePasswordFirstLogin = async (userId: string, newPassword: stri
 
     const newPasswordHash = await bcrypt.hash(newPassword, 10);
 
-    await dbRepository.updateUser(user.id, (draft) => {
+    const updated = await dbRepository.updateUser(user.id, (draft) => {
         draft.passwordHash = newPasswordHash;
         draft.mustChangePassword = false;
     });
+
+    if (!updated) {
+        throw new AppError(404, 'USER_NOT_FOUND', 'User not found.');
+    }
+
+    return login(username, newPassword);
 };
 
 export const createProfileHeartbeatToken = (profile: { id: string; name: string }) =>
@@ -148,6 +154,7 @@ export const createProfileHeartbeatToken = (profile: { id: string; name: string 
             tokenType: 'profile-heartbeat',
         },
         config.jwtSecret,
+        { expiresIn: '30d' },
     );
 
 export const verifyProfileHeartbeatToken = (token: string, expectedSlug: string) => {
@@ -167,6 +174,7 @@ export const createDeviceToken = (device: { id: string; deviceSecret: string }) 
             tokenType: 'device',
         },
         config.jwtSecret,
+        { expiresIn: '30d' },
     );
 
 export const verifyDeviceToken = (token: string, expectedDeviceId: string) => {

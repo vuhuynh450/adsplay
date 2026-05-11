@@ -179,6 +179,10 @@ test('first login password change clears mustChangePassword flag', async () => {
     .send({ newPassword: 'newpass456' });
 
   assert.equal(changePasswordResponse.status, 200);
+  assert.ok(changePasswordResponse.body.token);
+  assert.equal(changePasswordResponse.body.user.username, 'staff_first_login');
+  assert.equal(changePasswordResponse.body.user.mustChangePassword, false);
+  assert.deepEqual(changePasswordResponse.body.user.allowedPages, ['videos']);
 
   const loginAgainResponse = await request(app).post('/api/auth/login').send({
     username: 'staff_first_login',
@@ -245,6 +249,105 @@ test('staff cannot access employees endpoints', async () => {
   assert.equal(response.body.error.code, 'ADMIN_ONLY');
 });
 
+test('admin can bulk delete staff employees', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const firstResponse = await request(app)
+    .post('/api/employees')
+    .set(authHeader)
+    .send({
+      username: 'bulk_delete_staff_one',
+      password: 'staff123',
+      allowedPages: ['videos'],
+    });
+  const secondResponse = await request(app)
+    .post('/api/employees')
+    .set(authHeader)
+    .send({
+      username: 'bulk_delete_staff_two',
+      password: 'staff123',
+      allowedPages: ['devices'],
+    });
+
+  assert.equal(firstResponse.status, 200);
+  assert.equal(secondResponse.status, 200);
+
+  const deleteResponse = await request(app)
+    .delete('/api/employees')
+    .set(authHeader)
+    .send({ employeeIds: [firstResponse.body.id, secondResponse.body.id, firstResponse.body.id] });
+
+  assert.equal(deleteResponse.status, 200);
+  assert.equal(deleteResponse.body.deletedCount, 2);
+
+  const listResponse = await request(app)
+    .get('/api/employees')
+    .set(authHeader);
+
+  assert.equal(listResponse.status, 200);
+  assert.equal(
+    listResponse.body.some((employee) => employee.id === firstResponse.body.id),
+    false,
+  );
+  assert.equal(
+    listResponse.body.some((employee) => employee.id === secondResponse.body.id),
+    false,
+  );
+});
+
+test('bulk delete employees requires at least one employee id', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const response = await request(app)
+    .delete('/api/employees')
+    .set(authHeader)
+    .send({ employeeIds: [] });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'VALIDATION_ERROR');
+});
+
+test('upload session route without token returns AUTH_REQUIRED', async () => {
+  const response = await request(app).post('/api/videos/uploads/sessions').send({
+    fileKey: 'missing-token',
+    mimeType: 'video/mp4',
+    originalName: 'missing-token.mp4',
+    totalSizeBytes: 1024,
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal(response.body.error.code, 'AUTH_REQUIRED');
+});
+
+test('token for deleted staff user is rejected', async () => {
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('staff-deleted-123', 10);
+
+  const user = await dbRepository.createUser({
+    username: 'staff_deleted_token',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['system'],
+  });
+
+  const loginResponse = await request(app).post('/api/auth/login').send({
+    username: 'staff_deleted_token',
+    password: 'staff-deleted-123',
+  });
+  assert.equal(loginResponse.status, 200);
+
+  await dbRepository.deleteUsers([user.id]);
+
+  const response = await request(app)
+    .get('/api/system/status')
+    .set('Authorization', `Bearer ${loginResponse.body.token}`);
+
+  assert.equal(response.status, 401);
+  assert.equal(response.body.error.code, 'AUTH_REQUIRED');
+});
+
 test('auth and system status flow works', async () => {
   const { authHeader, token } = await loginAsAdmin();
 
@@ -264,6 +367,57 @@ test('auth and system status flow works', async () => {
     .set('Authorization', `Bearer ${token}.tampered`);
 
   assert.equal(malformedAdminAttempt.status, 403);
+});
+
+test('staff without videos permission cannot upload or delete videos', async () => {
+  const bcrypt = require('bcryptjs');
+  const { authHeader } = await loginAsAdmin();
+  const passwordHash = await bcrypt.hash('staff-no-videos-123', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_no_videos_write',
+    passwordHash,
+    role: 'staff',
+    isActive: true,
+    mustChangePassword: false,
+    allowedPages: ['profiles'],
+  });
+
+  const staffLogin = await request(app).post('/api/auth/login').send({
+    username: 'staff_no_videos_write',
+    password: 'staff-no-videos-123',
+  });
+  assert.equal(staffLogin.status, 200);
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set('Authorization', `Bearer ${staffLogin.body.token}`)
+    .attach('video', Buffer.from('fake mp4 content'), {
+      contentType: 'video/mp4',
+      filename: 'forbidden.mp4',
+    });
+  assert.equal(uploadResponse.status, 403);
+  assert.equal(uploadResponse.body.error.code, 'PAGE_FORBIDDEN');
+
+  const adminUpload = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('fake mp4 content'), {
+      contentType: 'video/mp4',
+      filename: 'admin-video.mp4',
+    });
+  assert.equal(adminUpload.status, 200);
+
+  const deleteResponse = await request(app)
+    .delete(`/api/videos/${adminUpload.body.id}`)
+    .set('Authorization', `Bearer ${staffLogin.body.token}`);
+  assert.equal(deleteResponse.status, 403);
+  assert.equal(deleteResponse.body.error.code, 'PAGE_FORBIDDEN');
+
+  const cleanupResponse = await request(app)
+    .delete(`/api/videos/${adminUpload.body.id}`)
+    .set(authHeader);
+  assert.equal(cleanupResponse.status, 200);
 });
 
 test('video upload and profile lifecycle work end-to-end', async () => {
@@ -292,6 +446,8 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(createProfileResponse.body.slug, 'lobby-screen');
   assert.equal(createProfileResponse.body.videos.length, 1);
   assert.ok(createProfileResponse.body.playerAccessToken);
+  const profileTokenPayload = require('jsonwebtoken').decode(createProfileResponse.body.playerAccessToken);
+  assert.equal(typeof profileTokenPayload.exp, 'number');
 
   const publicProfilesResponse = await request(app).get('/api/profiles');
   assert.equal(publicProfilesResponse.status, 200);
@@ -442,6 +598,8 @@ test('device binding flow supports pending registration, confirmation, assignmen
   assert.equal(registrationStatus.body.status, 'confirmed');
   assert.ok(registrationStatus.body.deviceId);
   assert.ok(registrationStatus.body.deviceToken);
+  const deviceTokenPayload = require('jsonwebtoken').decode(registrationStatus.body.deviceToken);
+  assert.equal(typeof deviceTokenPayload.exp, 'number');
 
   const unassignedBindingResponse = await request(app)
     .get(`/api/player/device/${registrationStatus.body.deviceId}`)
@@ -692,6 +850,17 @@ test('device confirmation returns conflict when create path conflict happens', a
 
   assert.equal(confirmResponse.status, 409);
   assert.equal(confirmResponse.body.error.code, 'DEVICE_CODE_ALREADY_USED');
+});
+
+test('upload session routes reject path traversal session ids', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const response = await request(app)
+    .get('/api/videos/uploads/sessions/..%2fdb.json')
+    .set(authHeader);
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.error.code, 'UPLOAD_SESSION_INVALID');
 });
 
 test('resumable upload sessions resume per client key without cross-client collisions', async () => {

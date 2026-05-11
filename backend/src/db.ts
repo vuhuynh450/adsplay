@@ -297,6 +297,23 @@ export const dbRepository = {
         });
         return updatedUser;
     },
+    async deleteUsers(ids: string[]) {
+        const targetIds = new Set(ids);
+        let deletedCount = 0;
+        await mutate((db) => {
+            const remainingUsers = db.users.filter((user) => {
+                if (user.role !== 'staff' || !targetIds.has(user.id)) {
+                    return true;
+                }
+
+                deletedCount += 1;
+                return false;
+            });
+
+            db.users = remainingUsers;
+        });
+        return deletedCount;
+    },
     async findVideoById(id: string) {
         return dbCache.videos.find((video) => video.id === id) || null;
     },

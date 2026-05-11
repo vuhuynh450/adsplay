@@ -3,6 +3,7 @@ import { AppError } from '../errors';
 import type { AdminTokenPayload } from '../services/auth.service';
 import { verifyAdminToken } from '../services/auth.service';
 import { dbRepository } from '../db';
+import { getConfig } from '../config';
 import type { PageKey } from '../types';
 
 export interface AuthenticatedRequest extends Request {
@@ -43,16 +44,26 @@ const assignVerifiedUser = async (req: AuthenticatedRequest, token: string) => {
             mustChangePassword: dbUser.mustChangePassword,
             allowedPages: dbUser.allowedPages,
         };
-    } else {
-        req.user = {
-            id: payload.userId,
-            username: payload.username,
-            role: payload.role,
-            isActive: true,
-            mustChangePassword: false,
-            allowedPages: ['videos', 'profiles', 'devices', 'system', 'employees'],
-        };
+        return;
     }
+
+    const config = getConfig();
+    if (
+        payload.userId !== 'default-admin' ||
+        payload.username !== config.adminUsername ||
+        payload.role !== 'admin'
+    ) {
+        throw new AppError(401, 'AUTH_REQUIRED', 'Authentication is required.');
+    }
+
+    req.user = {
+        id: payload.userId,
+        username: payload.username,
+        role: payload.role,
+        isActive: true,
+        mustChangePassword: false,
+        allowedPages: ['videos', 'profiles', 'devices', 'system', 'employees'],
+    };
 };
 
 export const authenticateToken = async (

@@ -356,6 +356,12 @@ export class ApiService {
         return this.http.patch<EmployeeView>(`${this.apiUrl}/employees/${id}/reset-first-password`, {});
     }
 
+    deleteEmployeesBulk(employeeIds: string[]): Observable<{ deletedCount: number }> {
+        return this.http.delete<{ deletedCount: number }>(`${this.apiUrl}/employees`, {
+            body: { employeeIds },
+        });
+    }
+
     changePasswordFirstLogin(newPassword: string): Observable<{ token: string; user: AuthLoginUser }> {
         return this.http.post<{ token: string; user: AuthLoginUser }>(
             `${this.apiUrl}/auth/change-password-first-login`,

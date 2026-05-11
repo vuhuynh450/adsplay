@@ -24,7 +24,7 @@ export const profileRouter = Router();
 profileRouter.get(
     '/',
     authenticateTokenIfPresent,
-    requirePageAccess('profiles'),
+    requirePageAccess('profiles', { allowPublic: true }),
     asyncHandler(async (_req, res) => {
         const req = _req as AuthenticatedRequest;
         const isAdminRequest = Boolean(req.user);

@@ -27,7 +27,7 @@ authRouter.post(
             throw new Error('User not authenticated');
         }
 
-        await changePasswordFirstLogin(req.user.username, newPassword);
-        res.json({ success: true });
+        const result = await changePasswordFirstLogin(req.user.username, newPassword);
+        res.json(result);
     }),
 );

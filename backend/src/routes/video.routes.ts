@@ -275,6 +275,7 @@ videoRouter.get(
 videoRouter.post(
     '/',
     authenticateToken,
+    requirePageAccess('videos'),
     (req, _res, next) => {
         req.on('aborted', async () => {
             const file = (req as typeof req & { file?: Express.Multer.File }).file;
@@ -318,6 +319,7 @@ videoRouter.post(
 videoRouter.delete(
     '/:id',
     authenticateToken,
+    requirePageAccess('videos'),
     asyncHandler(async (req, res) => {
         await deleteVideo(requireNonEmptyString(req.params.id, 'id'));
         res.json({ success: true });

@@ -6,8 +6,20 @@ import { AppError } from '../errors';
 import type { UploadSessionManifest } from '../types';
 
 const config = getConfig();
+const sessionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const getSessionDir = (sessionId: string) => path.join(config.uploadSessionsDir, sessionId);
+const isValidSessionId = (sessionId: string) => sessionIdPattern.test(sessionId);
+
+const assertValidSessionId = (sessionId: string) => {
+    if (!isValidSessionId(sessionId)) {
+        throw new AppError(400, 'UPLOAD_SESSION_INVALID', 'Upload session id is invalid.');
+    }
+};
+
+const getSessionDir = (sessionId: string) => {
+    assertValidSessionId(sessionId);
+    return path.join(config.uploadSessionsDir, sessionId);
+};
 const getManifestPath = (sessionId: string) => path.join(getSessionDir(sessionId), 'manifest.json');
 const getChunksDir = (sessionId: string) => path.join(getSessionDir(sessionId), 'chunks');
 const getChunkPath = (sessionId: string, chunkIndex: number) =>
@@ -96,6 +108,10 @@ const findResumableSession = async (input: {
     let latestMatch: UploadSessionManifest | null = null;
 
     for (const sessionId of sessionIds) {
+        if (!isValidSessionId(sessionId)) {
+            continue;
+        }
+
         const manifest = await readManifest(sessionId);
         if (!manifest || !matchesUploadInput(manifest, input)) {
             continue;

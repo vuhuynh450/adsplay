@@ -113,6 +113,19 @@ export const resetEmployeeFirstPassword = async (id: string) => {
     return toEmployeeView(updated);
 };
 
+export const deleteEmployeesBulk = async (employeeIds: string[]) => {
+    const existingEmployees = await listEmployees();
+    const existingEmployeeIds = new Set(existingEmployees.map((employee) => employee.id));
+    const idsToDelete = [...new Set(employeeIds)].filter((id) => existingEmployeeIds.has(id));
+
+    if (!idsToDelete.length) {
+        return { deletedCount: 0 };
+    }
+
+    const deletedCount = await dbRepository.deleteUsers(idsToDelete);
+    return { deletedCount };
+};
+
 export const updateEmployee = async (id: string, input: {
     username?: string;
     password?: string;
@@ -130,12 +143,14 @@ export const updateEmployee = async (id: string, input: {
         }
     }
 
+    const passwordHash = input.password ? await bcrypt.hash(input.password, 10) : null;
+
     const updated = await dbRepository.updateUser(id, (draft) => {
         if (input.username) {
             draft.username = input.username;
         }
-        if (input.password) {
-            draft.passwordHash = bcrypt.hashSync(input.password, 10);
+        if (passwordHash) {
+            draft.passwordHash = passwordHash;
             draft.mustChangePassword = false;
         }
         if (input.allowedPages) {
