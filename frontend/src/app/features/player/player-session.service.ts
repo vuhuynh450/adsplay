@@ -697,12 +697,17 @@ export class PlayerSessionService {
   }
 
   private applyProfileUpdate(updatedProfile: PlayerProfile, activeProfile: PlayerProfile) {
-    const currentVideosHash = activeProfile.videos?.map((video) => video.id).join(',') || '';
-    const newVideosHash = updatedProfile.videos?.map((video) => video.id).join(',') || '';
-
-    if (currentVideosHash !== newVideosHash || activeProfile.slug !== updatedProfile.slug) {
+    if (this.getProfilePlaybackSignature(activeProfile) !== this.getProfilePlaybackSignature(updatedProfile)) {
       this.switchPlaybackToProfile(updatedProfile);
     }
+  }
+
+  private getProfilePlaybackSignature(profile: PlayerProfile) {
+    const videosSignature = profile.videos
+      ?.map((video) => `${video.id}:${video.updatedAt}`)
+      .join(',') || '';
+
+    return [profile.slug, profile.orientation, videosSignature].join('|');
   }
 
   private switchPlaybackToProfile(profile: PlayerProfile) {

@@ -41,6 +41,30 @@ describe('PlayerSessionService orientation mapping', () => {
     });
   };
 
+  const profile = (partial: Partial<PlayerProfile> = {}): PlayerProfile => ({
+    name: 'Device 1',
+    slug: 'device-1',
+    orientation: 'landscape',
+    videos: [
+      {
+        createdAt: '2026-07-01T00:00:00.000Z',
+        filename: 'video.mp4',
+        id: 'video-1',
+        mediaType: 'video',
+        originalName: 'Video.mp4',
+        processingStatus: 'ready',
+        sourceFilename: 'video.mp4',
+        sourceSize: 100,
+        size: 100,
+        storageProvider: 'local',
+        streamVariant: 'original',
+        updatedAt: '2026-07-01T00:00:00.000Z',
+        uploadedAt: '2026-07-01T00:00:00.000Z',
+      },
+    ],
+    ...partial,
+  });
+
   it('maps landscape to rotate(0deg)', () => {
     setProfileOrientation('landscape');
 
@@ -72,5 +96,39 @@ describe('PlayerSessionService orientation mapping', () => {
     setProfileOrientation('rotate180');
     expect(service.getMediaWrapperWidth()).toBe('100%');
     expect(service.getMediaWrapperHeight()).toBe('100%');
+  });
+
+  it('reloads playback when a synced device profile changes orientation', () => {
+    const switchPlaybackSpy = vi
+      .spyOn(service as unknown as { switchPlaybackToProfile: (profile: PlayerProfile) => void }, 'switchPlaybackToProfile')
+      .mockImplementation(() => undefined);
+
+    (service as unknown as {
+      applyProfileUpdate: (updatedProfile: PlayerProfile, activeProfile: PlayerProfile) => void;
+    }).applyProfileUpdate(profile({ orientation: 'rotate270' }), profile({ orientation: 'landscape' }));
+
+    expect(switchPlaybackSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reloads playback when a synced device video keeps its id but has a newer version', () => {
+    const switchPlaybackSpy = vi
+      .spyOn(service as unknown as { switchPlaybackToProfile: (profile: PlayerProfile) => void }, 'switchPlaybackToProfile')
+      .mockImplementation(() => undefined);
+
+    (service as unknown as {
+      applyProfileUpdate: (updatedProfile: PlayerProfile, activeProfile: PlayerProfile) => void;
+    }).applyProfileUpdate(
+      profile({
+        videos: [
+          {
+            ...profile().videos[0],
+            updatedAt: '2026-07-01T01:00:00.000Z',
+          },
+        ],
+      }),
+      profile(),
+    );
+
+    expect(switchPlaybackSpy).toHaveBeenCalledTimes(1);
   });
 });
