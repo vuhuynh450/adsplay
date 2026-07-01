@@ -120,6 +120,28 @@ describe('ProfileManager', () => {
     expect(text).not.toContain('Link phát:');
   });
 
+  it('renders only the content count badge on profile cards', () => {
+    TestBed.configureTestingModule({
+      imports: [ProfileManager],
+    });
+
+    const fixture = TestBed.createComponent(ProfileManager);
+    const component = fixture.componentInstance;
+    component.profiles = [profile({ id: 'profile-1', name: 'Lobby TV', slug: 'tivi', lastSeen: new Date().toISOString() })];
+    fixture.detectChanges();
+
+    const card = fixture.nativeElement.querySelector('article') as HTMLElement;
+    const badges = card.querySelectorAll('.mt-3 span');
+
+    expect(badges.length).toBe(1);
+    expect(badges[0].textContent?.trim()).toBe('1 nội dung');
+
+    const badgeText = (card.querySelector('.mt-3')?.textContent ?? '').toLowerCase();
+    expect(badgeText).not.toContain('tivi');
+    expect(badgeText).not.toContain('online');
+    expect(badgeText).not.toContain('offline');
+  });
+
   it('builds a dedicated legacy player URL for old TVs', () => {
     const component = new ProfileManager();
     component.localIps = ['192.168.1.25'];
