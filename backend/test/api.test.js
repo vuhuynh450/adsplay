@@ -596,7 +596,7 @@ test('device binding flow supports pending registration, confirmation, assignmen
   assert.ok(registrationStatus.body.deviceId);
   assert.ok(registrationStatus.body.deviceToken);
   const deviceTokenPayload = require('jsonwebtoken').decode(registrationStatus.body.deviceToken);
-  assert.equal(typeof deviceTokenPayload.exp, 'number');
+  assert.equal(deviceTokenPayload.exp, undefined);
 
   const unassignedBindingResponse = await request(app)
     .get(`/api/player/device/${registrationStatus.body.deviceId}`)

@@ -174,7 +174,6 @@ export const createDeviceToken = (device: { id: string; deviceSecret: string }) 
             tokenType: 'device',
         },
         config.jwtSecret,
-        { expiresIn: '30d' },
     );
 
 export const verifyDeviceToken = (token: string, expectedDeviceId: string) => {
