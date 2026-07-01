@@ -20,8 +20,7 @@ export interface Video {
     sourceMimeType?: string;
     sourceSize: number;
     size: number;
-    storageProvider: 'local' | 'r2';
-    r2ObjectKey?: string;
+    storageProvider: 'local';
     streamVariant: 'optimized' | 'original';
     updatedAt: string;
     uploadedAt: string;
@@ -48,15 +47,6 @@ export interface PlayerProfileSummary {
     name: string;
     slug: string;
     videoCount: number;
-}
-
-export interface R2Stats {
-    enabled: boolean;
-    bucket: string;
-    totalObjects: number;
-    totalSizeBytes: number;
-    lastUpdated: string;
-    error?: string;
 }
 
 export interface PlayerProfile {
@@ -136,7 +126,7 @@ export interface VideoPolicy {
     mediaProcessingEnabled: boolean;
     maxUploadSizeBytes: number;
     resumableChunkSizeBytes: number;
-    storageTargets?: Array<'local' | 'r2'>;
+    storageTargets: ['local'];
 }
 
 export interface UploadSession {
@@ -173,16 +163,6 @@ export class ApiService {
 
     getVideoPolicy(): Observable<VideoPolicy> {
         return this.http.get<VideoPolicy>(`${this.apiUrl}/videos/policy`);
-    }
-
-    uploadVideo(file: File, storageTarget: 'local' | 'r2' = 'local'): Observable<HttpEvent<Video>> {
-        const formData = new FormData();
-        formData.append('video', file);
-        formData.append('storageTarget', storageTarget);
-        return this.http.post<Video>(`${this.apiUrl}/videos`, formData, {
-            reportProgress: true,
-            observe: 'events'
-        });
     }
 
     createUploadSession(payload: {
@@ -320,8 +300,8 @@ export class ApiService {
         return this.http.delete(`${this.apiUrl}/profiles/${id}`);
     }
 
-    getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[]; r2?: R2Stats }> {
-        return this.http.get<{ online: boolean; uptime: number; localIps: string[]; r2?: R2Stats }>(`${this.apiUrl}/system/status`);
+    getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[] }> {
+        return this.http.get<{ online: boolean; uptime: number; localIps: string[] }>(`${this.apiUrl}/system/status`);
     }
 
     getEmployees(): Observable<EmployeeView[]> {

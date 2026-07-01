@@ -6,21 +6,14 @@ import { getConfig } from '../config';
 import { AppError } from '../errors';
 import type { Video } from '../types';
 import { enqueueVideoProcessing } from './media.service';
-import { getStreamUrl as getR2StreamUrl, removeObject as removeR2Object, uploadObject as uploadR2Object } from './r2-storage.service';
 
 const config = getConfig();
 const VIDEO_MIME_TYPES: string[] = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
 const IMAGE_MIME_TYPES: string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
-export type UploadStorageTarget = 'local' | 'r2';
+export type UploadStorageTarget = 'local';
 
 const inferMediaType = (mimeType: string) => (mimeType.startsWith('image/') ? 'image' : 'video');
-
-const createR2ObjectKey = (originalName: string) => {
-    const extension = path.extname(originalName) || '.bin';
-    const randomPart = Math.round(Math.random() * 1e9);
-    return `videos/${Date.now()}-${randomPart}${extension}`;
-};
 
 const mapUsageCount = async () => {
     const [videos, profiles] = await Promise.all([dbRepository.listVideos(), dbRepository.listProfiles()]);
@@ -44,13 +37,10 @@ const createVideoRecord = async (input: {
     filename: string;
     mimeType: string;
     originalName: string;
-    r2ObjectKey?: string;
     size: number;
-    storageProvider: UploadStorageTarget;
 }) => {
     const mediaType = inferMediaType(input.mimeType);
-    const shouldProcess =
-        config.mediaProcessingEnabled && mediaType === 'video' && input.storageProvider === 'local';
+    const shouldProcess = config.mediaProcessingEnabled && mediaType === 'video';
 
     const video = await dbRepository.saveVideo({
         filename: input.filename,
@@ -63,13 +53,12 @@ const createVideoRecord = async (input: {
         sourceMimeType: input.mimeType,
         sourceSize: input.size,
         size: input.size,
-        storageProvider: input.storageProvider,
-        r2ObjectKey: input.r2ObjectKey,
+        storageProvider: 'local',
         streamVariant: 'original',
         uploadedAt: new Date().toISOString(),
     });
 
-    if (video.mediaType === 'video' && video.storageProvider === 'local') {
+    if (video.mediaType === 'video') {
         void enqueueVideoProcessing(video.id);
     }
 
@@ -87,42 +76,14 @@ export const saveUploadedVideo = async (file: Express.Multer.File) =>
         mimeType: file.mimetype,
         originalName: file.originalname,
         size: file.size,
-        storageProvider: 'local',
     });
-
-export const saveUploadedVideoToR2 = async (file: Express.Multer.File) => {
-    const filePath = path.join(config.uploadsDir, file.filename);
-    const fileBuffer = await fs.readFile(filePath);
-    const objectKey = createR2ObjectKey(file.originalname);
-
-    const uploaded = await uploadR2Object({
-        body: fileBuffer,
-        contentType: file.mimetype,
-        objectKey,
-    });
-
-    await fs.remove(filePath);
-
-    return createVideoRecord({
-        filename: uploaded.key,
-        mimeType: file.mimetype,
-        originalName: file.originalname,
-        r2ObjectKey: uploaded.key,
-        size: file.size,
-        storageProvider: 'r2',
-    });
-};
 
 export const saveUploadedVideoFromFile = async (input: {
     filename: string;
     mimeType: string;
     originalName: string;
     size: number;
-}) =>
-    createVideoRecord({
-        ...input,
-        storageProvider: 'local',
-    });
+}) => createVideoRecord(input);
 
 export const getVideoById = async (id: string) => {
     const video = await dbRepository.findVideoById(id);
@@ -138,36 +99,17 @@ export const getVideoPolicy = () => ({
     mediaProcessingEnabled: config.mediaProcessingEnabled,
     maxUploadSizeBytes: config.maxUploadSizeBytes,
     resumableChunkSizeBytes: config.resumableChunkSizeBytes,
-    storageTargets: config.r2.enabled ? ['local', 'r2'] : ['local'],
+    storageTargets: ['local'] as const,
 });
 
-export type VideoStreamSource =
-    | {
-          absolutePath: string;
-          kind: 'local';
-          video: Video;
-      }
-    | {
-          kind: 'r2';
-          streamUrl: string;
-          video: Video;
-      };
+export type VideoStreamSource = {
+    absolutePath: string;
+    kind: 'local';
+    video: Video;
+};
 
 export const getVideoStreamSource = async (id: string): Promise<VideoStreamSource> => {
     const video = await getVideoById(id);
-
-    if (video.storageProvider === 'r2') {
-        if (!video.r2ObjectKey) {
-            throw new AppError(404, 'VIDEO_FILE_NOT_FOUND', 'R2 object key is missing for this video.');
-        }
-
-        return {
-            kind: 'r2',
-            streamUrl: await getR2StreamUrl({ key: video.r2ObjectKey }),
-            video,
-        };
-    }
-
     const preferredPath = path.join(config.uploadsDir, video.filename);
     const sourcePath = path.join(config.uploadsDir, video.sourceFilename);
     const candidatePaths = preferredPath === sourcePath ? [preferredPath] : [preferredPath, sourcePath];
@@ -233,15 +175,9 @@ export const deleteVideo = async (id: string) => {
         throw new AppError(404, 'VIDEO_NOT_FOUND', 'Video not found.');
     }
 
-    if (video.storageProvider === 'r2' && video.r2ObjectKey) {
-        await removeR2Object({ key: video.r2ObjectKey });
-    }
-
     const filePaths = new Set<string>();
-    if (video.storageProvider === 'local') {
-        filePaths.add(path.join(config.uploadsDir, video.filename));
-        filePaths.add(path.join(config.uploadsDir, video.sourceFilename));
-    }
+    filePaths.add(path.join(config.uploadsDir, video.filename));
+    filePaths.add(path.join(config.uploadsDir, video.sourceFilename));
 
     if (video.posterFilename) {
         filePaths.add(path.join(config.uploadsDir, video.posterFilename));

@@ -176,8 +176,7 @@
             <div *ngIf="activeTab() === 'videos'" class="animate-fade-in h-full pb-20">
                 <app-video-list [videos]="store.videos()" [isUploading]="store.isUploading()"
                     [uploadProgress]="store.uploadProgress()" [maxUploadSizeBytes]="store.maxUploadSizeBytes()"
-                    [uploadStatusLabel]="store.uploadStatusLabel()" [selectedUploadTarget]="store.uploadTarget()"
-                    (uploadTargetChange)="onUploadTargetChange($event)"
+                    [uploadStatusLabel]="store.uploadStatusLabel()"
                     (upload)="onUpload($event)"
                     (preview)="openPreview($event)"
                     (delete)="requestDeleteVideo($event)">
@@ -235,53 +234,6 @@
                         </div>
                     </div>
 
-                    <!-- R2 Storage Info -->
-                    <div *ngIf="store.systemInfo()?.r2?.enabled" class="p-6 rounded-2xl bg-white dark:bg-brand-surface border border-slate-200 dark:border-white/10 shadow-sm">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-bold text-slate-800 dark:text-slate-100">Cloudflare R2 Storage</h3>
-                            <button
-                                (click)="store.refreshSystemStatus()"
-                                class="px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                                title="Làm mới thông tin R2">
-                                Làm mới
-                            </button>
-                        </div>
-
-                        <div *ngIf="!store.systemInfo()?.r2?.error" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
-                                <span class="text-sm font-medium text-slate-500 dark:text-slate-400">Bucket:</span>
-                                <span class="text-sm font-mono text-slate-700 dark:text-slate-300">
-                                    {{ store.systemInfo()?.r2?.bucket || '—' }}
-                                </span>
-                            </div>
-                            <div class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
-                                <span class="text-sm font-medium text-slate-500 dark:text-slate-400">Số files:</span>
-                                <span class="text-sm font-mono text-slate-700 dark:text-slate-300">
-                                    {{ store.systemInfo()?.r2?.totalObjects || 0 }} files
-                                </span>
-                            </div>
-                            <div class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
-                                <span class="text-sm font-medium text-slate-500 dark:text-slate-400">Dung lượng:</span>
-                                <span class="text-sm font-mono text-slate-700 dark:text-slate-300">
-                                    {{ formatBytes(store.systemInfo()?.r2?.totalSizeBytes || 0) }}
-                                </span>
-                            </div>
-                            <div class="flex items-center gap-3 p-3 bg-slate-50 dark:bg-white/5 rounded-xl">
-                                <span class="text-sm font-medium text-slate-500 dark:text-slate-400">Cập nhật:</span>
-                                <span class="text-sm font-mono text-slate-700 dark:text-slate-300">
-                                    {{ formatRelativeTime(store.systemInfo()?.r2?.lastUpdated) }}
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Error State -->
-                        <div *ngIf="store.systemInfo()?.r2?.error"
-                             class="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
-                            <p class="text-sm text-red-600 dark:text-red-400">
-                                ⚠️ Không thể kết nối R2: {{ store.systemInfo()?.r2?.error }}
-                            </p>
-                        </div>
-                    </div>
                 </div>
             </div>
 

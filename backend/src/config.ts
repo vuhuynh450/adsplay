@@ -43,16 +43,6 @@ const loadEnvFile = () => {
 
 loadEnvFile();
 
-export interface R2Config {
-    accessKeyId: string;
-    bucket: string;
-    enabled: boolean;
-    endpoint: string;
-    publicBaseUrl?: string;
-    secretAccessKey: string;
-    signedUrlExpiresSeconds: number;
-}
-
 export interface AppConfig {
     adminPassword: string;
     adminUsername: string;
@@ -65,7 +55,6 @@ export interface AppConfig {
     maxUploadSizeBytes: number;
     processedUploadsDir: string;
     port: number;
-    r2: R2Config;
     uploadSessionsDir: string;
     uploadsDir: string;
 }
@@ -93,7 +82,6 @@ export const getConfig = (): AppConfig => {
     const maxUploadSizeMb = Number(process.env.MAX_UPLOAD_SIZE_MB || '2048');
     const mediaProcessingEnabled = process.env.MEDIA_TRANSCODE_ENABLED !== 'false';
     const resumableChunkSizeMb = Number(process.env.RESUMABLE_CHUNK_SIZE_MB || '8');
-    const r2SignedUrlExpiresSeconds = Number(process.env.R2_SIGNED_URL_EXPIRES_SECONDS || '900');
 
     if (!Number.isFinite(maxUploadSizeMb) || maxUploadSizeMb < 100) {
         throw new Error('MAX_UPLOAD_SIZE_MB must be a number greater than or equal to 100.');
@@ -101,10 +89,6 @@ export const getConfig = (): AppConfig => {
 
     if (!Number.isFinite(resumableChunkSizeMb) || resumableChunkSizeMb < 1 || resumableChunkSizeMb > 64) {
         throw new Error('RESUMABLE_CHUNK_SIZE_MB must be between 1 and 64.');
-    }
-
-    if (!Number.isFinite(r2SignedUrlExpiresSeconds) || r2SignedUrlExpiresSeconds < 60) {
-        throw new Error('R2_SIGNED_URL_EXPIRES_SECONDS must be a number greater than or equal to 60.');
     }
 
     if (isProduction) {
@@ -127,15 +111,6 @@ export const getConfig = (): AppConfig => {
     const frontendDistDir = fs.existsSync(path.join(frontendBrowserDir, 'index.html'))
         ? frontendBrowserDir
         : frontendDistRoot;
-    const r2 = {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-        bucket: process.env.R2_BUCKET || '',
-        enabled: process.env.R2_ENABLED === 'true',
-        endpoint: process.env.R2_ENDPOINT || '',
-        publicBaseUrl: process.env.R2_PUBLIC_BASE_URL || undefined,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-        signedUrlExpiresSeconds: Math.floor(r2SignedUrlExpiresSeconds),
-    };
 
     fs.ensureDirSync(uploadsDir);
     fs.ensureDirSync(processedUploadsDir);
@@ -153,7 +128,6 @@ export const getConfig = (): AppConfig => {
         maxUploadSizeBytes: maxUploadSizeMb * 1024 * 1024,
         processedUploadsDir,
         port,
-        r2,
         uploadSessionsDir,
         uploadsDir,
     };

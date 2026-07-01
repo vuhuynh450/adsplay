@@ -1,6 +1,6 @@
 export type MediaType = 'video' | 'image';
 export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
-export type VideoStorageProvider = 'local' | 'r2';
+export type VideoStorageProvider = 'local';
 export type VideoStreamVariant = 'optimized' | 'original';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
 export type ProfileOrientation = 'landscape' | 'rotate90' | 'rotate180' | 'rotate270';
@@ -26,7 +26,6 @@ export interface Video {
     sourceSize: number;
     size: number;
     storageProvider: VideoStorageProvider;
-    r2ObjectKey?: string;
     streamVariant: VideoStreamVariant;
     durationSeconds?: number;
     updatedAt: string;

@@ -46,4 +46,27 @@ describe('VideoList', () => {
 
     expect(component.uploadError).toContain('0.5 GB');
   });
+
+  it('emits selected local files without a storage target', () => {
+    const component = new VideoList();
+    const emitted: unknown[] = [];
+    component.upload.subscribe((payload) => emitted.push(payload));
+    const file = new File(['hello'], 'promo.mp4', { type: 'video/mp4' });
+
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: [file] });
+
+    component.onFileSelected({ target: input } as unknown as Event);
+
+    expect(emitted).toEqual([{ file }]);
+    expect(component.uploadError).toBeNull();
+  });
+
+  it('uses only local supported upload formats', () => {
+    const component = new VideoList();
+
+    expect(component.getFileAccept()).toBe('video/mp4,video/webm,video/ogg,video/quicktime,image/jpeg,image/png,image/webp,image/gif');
+    expect(component.getUploadHint()).toContain('MP4, WebM, OGG, MOV, JPG, PNG, GIF, WebP');
+    expect(component.getUploadHint()).not.toContain('R2');
+  });
 });

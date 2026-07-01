@@ -1,5 +1,4 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
-import { HttpEventType } from '@angular/common/http';
 import { forkJoin, interval, of } from 'rxjs';
 import { catchError, finalize, map, startWith, switchMap } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -9,7 +8,6 @@ import {
   PendingDeviceRegistration,
   Profile,
   ProfileOrientation,
-  R2Stats,
   Video,
 } from '../../services/api.service';
 import { ToastService } from '../../shared/services/toast.service';
@@ -40,9 +38,8 @@ export class DashboardStore {
   readonly isUploading = signal(false);
   readonly uploadProgress = signal(0);
   readonly uploadStatusLabel = signal('Sẵn sàng tải lên');
-  readonly uploadTarget = signal<'local' | 'r2'>('local');
   readonly isSystemOnline = signal(true);
-  readonly systemInfo = signal<{ uptime: number; localIps: string[]; r2?: R2Stats } | null>(null);
+  readonly systemInfo = signal<{ uptime: number; localIps: string[] } | null>(null);
   readonly maxUploadSizeBytes = signal(2 * 1024 * 1024 * 1024);
   readonly activePlayerCount = computed(() => this.profiles().filter((profile) => this.isOnline(profile.lastSeen)).length);
 
@@ -127,7 +124,7 @@ export class DashboardStore {
         }
 
         this.isSystemOnline.set(status.online);
-        this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime, r2: status.r2 });
+        this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
       });
   }
 
@@ -144,28 +141,24 @@ export class DashboardStore {
       }
 
       this.isSystemOnline.set(status.online);
-      this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime, r2: status.r2 });
+      this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
     });
   }
 
-  async uploadMedia(file: File, storageTarget: 'local' | 'r2' = this.uploadTarget()) {
+  async uploadMedia(file: File) {
     this.isUploading.set(true);
     this.uploadProgress.set(0);
-    this.uploadStatusLabel.set(storageTarget === 'r2' ? 'Đang tải lên Cloudflare R2...' : 'Đang tạo phiên tải lên...');
+    this.uploadStatusLabel.set('Đang tạo phiên tải lên...');
 
     try {
-      if (storageTarget === 'r2') {
-        await this.uploadR2WithProgress(file);
-      } else {
-        await this.resumableUpload.uploadFile(file, (progressPercent, session) => {
-          this.uploadProgress.set(progressPercent);
-          this.uploadStatusLabel.set(
-            session.uploadedChunkIndexes.length > 0
-              ? `Đang tiếp tục tải lên (${session.uploadedChunkIndexes.length}/${session.totalChunks} chunk đã có)`
-              : 'Đang tải lên theo từng chunk...',
-          );
-        });
-      }
+      await this.resumableUpload.uploadFile(file, (progressPercent, session) => {
+        this.uploadProgress.set(progressPercent);
+        this.uploadStatusLabel.set(
+          session.uploadedChunkIndexes.length > 0
+            ? `Đang tiếp tục tải lên (${session.uploadedChunkIndexes.length}/${session.totalChunks} chunk đã có)`
+            : 'Đang tải lên theo từng chunk...',
+        );
+      });
 
       const successLabel = file.type.startsWith('image/') ? 'Ảnh' : 'Video';
       this.toastService.show(`${successLabel} đã được tải lên thành công.`, 'success');
@@ -186,43 +179,9 @@ export class DashboardStore {
       .subscribe({
         next: (policy) => {
           this.maxUploadSizeBytes.set(policy.maxUploadSizeBytes);
-          const r2Enabled = policy.storageTargets?.includes('r2') || false;
-          if (!r2Enabled && this.uploadTarget() === 'r2') {
-            this.uploadTarget.set('local');
-          }
         },
         error: () => undefined,
       });
-  }
-
-  setUploadTarget(target: 'local' | 'r2') {
-    this.uploadTarget.set(target);
-  }
-
-  private uploadR2WithProgress(file: File) {
-    return new Promise<void>((resolve, reject) => {
-      const totalBytes = file.size || 0;
-
-      this.api.uploadVideo(file, 'r2').subscribe({
-        next: (event) => {
-          if (event.type === HttpEventType.UploadProgress) {
-            const loaded = event.loaded || 0;
-            const total = event.total || totalBytes;
-            const progress = total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0;
-            this.uploadProgress.set(progress);
-            this.uploadStatusLabel.set(`Đang tải lên Cloudflare R2... ${progress}%`);
-            return;
-          }
-
-          if (event.type === HttpEventType.Response) {
-            this.uploadProgress.set(100);
-            this.uploadStatusLabel.set('Đang hoàn tất upload...');
-            resolve();
-          }
-        },
-        error: (error) => reject(error),
-      });
-    });
   }
 
   saveProfile(payload: SaveProfilePayload) {

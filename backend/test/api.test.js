@@ -36,11 +36,6 @@ const {
   __configureRegisterRateLimitForTests,
   __resetRegisterRateLimitForTests,
 } = require('../dist/routes/device.routes');
-const {
-  __resetR2StorageForTests,
-  __setR2StorageForTests,
-} = require('../dist/services/r2-storage.service');
-
 const app = createApp();
 const resumableChunkSizeBytes = 8 * 1024 * 1024;
 
@@ -94,7 +89,6 @@ test.beforeEach(() => {
   __resetRegisterRateLimitForTests();
   __resetDeviceCodeGeneratorForTests();
   __resetPendingDeviceRegistrationsForTests();
-  __resetR2StorageForTests();
 });
 
 test.after(async () => {
@@ -480,9 +474,12 @@ test('video upload and profile lifecycle work end-to-end', async () => {
   assert.equal(videosResponse.body[0].processingStatus, 'ready');
 
   const policyResponse = await request(app).get('/api/videos/policy').set(authHeader);
+
   assert.equal(policyResponse.status, 200);
   assert.equal(policyResponse.body.maxUploadSizeBytes, 512 * 1024 * 1024);
-  assert.equal(policyResponse.body.mediaProcessingEnabled, false);
+  assert.equal(policyResponse.body.resumableChunkSizeBytes, resumableChunkSizeBytes);
+  assert.deepEqual(policyResponse.body.storageTargets, ['local']);
+  assert.ok(policyResponse.body.allowedMimeTypes.includes('video/mp4'));
   assert.ok(policyResponse.body.allowedMimeTypes.includes('image/png'));
 
   const streamResponse = await request(app)
@@ -944,12 +941,8 @@ test('image uploads are returned as image media and can be used in profiles', as
   assert.equal(publicProfile.body.videos[0].mediaType, 'image');
 });
 
-test('R2 uploads keep MP4 direct stream and do not expose HLS manifest', async () => {
+test('form uploads ignore removed R2 storageTarget and save locally', async () => {
   const { authHeader } = await loginAsAdmin();
-  __setR2StorageForTests({
-    getStreamUrl: ({ key }) => `https://r2.example.com/${key}`,
-    uploadObject: async () => ({ key: 'videos/r2-promo.mp4' }),
-  });
 
   const uploadResponse = await request(app)
     .post('/api/videos')
@@ -957,18 +950,34 @@ test('R2 uploads keep MP4 direct stream and do not expose HLS manifest', async (
     .field('storageTarget', 'r2')
     .attach('video', Buffer.from('fake mp4 content'), {
       contentType: 'video/mp4',
-      filename: 'r2-promo.mp4',
+      filename: 'promo.mp4',
     });
 
   assert.equal(uploadResponse.status, 200);
   assert.equal(uploadResponse.body.mediaType, 'video');
   assert.equal(uploadResponse.body.processingStatus, 'ready');
-  assert.equal(uploadResponse.body.hlsManifestPath, undefined);
-  assert.equal(uploadResponse.body.storageProvider, 'r2');
+  assert.equal(uploadResponse.body.storageProvider, 'local');
+  assert.equal(uploadResponse.body.r2ObjectKey, undefined);
 
   const streamResponse = await request(app).get(`/api/videos/${uploadResponse.body.id}/stream`);
-  assert.equal(streamResponse.status, 302);
-  assert.equal(streamResponse.headers.location, 'https://r2.example.com/videos/r2-promo.mp4');
+  assert.equal(streamResponse.status, 200);
+  assert.equal(streamResponse.headers['content-type'], 'video/mp4');
+});
+
+test('removed R2 direct upload route returns not found', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const response = await request(app)
+    .post('/api/videos/r2/uploads')
+    .set(authHeader)
+    .send({
+      fileKey: 'client-a:removed-r2-route',
+      mimeType: 'video/mp4',
+      originalName: 'removed.mp4',
+      totalSizeBytes: 1024,
+    });
+
+  assert.equal(response.status, 404);
 });
 
 test('resumable upload sessions reject undersized non-final chunks and still assemble valid uploads', async () => {

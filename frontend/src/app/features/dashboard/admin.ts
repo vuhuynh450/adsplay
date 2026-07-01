@@ -4,7 +4,7 @@ import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
 import { ApiService, Video } from '../../services/api.service';
 import { ThemeToggle } from '../../shared/ui/theme-toggle/theme-toggle';
-import { UploadMediaPayload, UploadTarget, VideoList } from './components/video-list/video-list';
+import { UploadMediaPayload, VideoList } from './components/video-list/video-list';
 import { ProfileManager } from './components/profile-manager/profile-manager';
 import {
   AssignDeviceProfilePayload,
@@ -107,11 +107,7 @@ export class Admin implements OnInit {
   }
 
   onUpload(payload: UploadMediaPayload) {
-    this.store.uploadMedia(payload.file, payload.storageTarget);
-  }
-
-  onUploadTargetChange(target: UploadTarget) {
-    this.store.setUploadTarget(target);
+    this.store.uploadMedia(payload.file);
   }
 
   requestDeleteVideo(id: string) {
@@ -253,25 +249,4 @@ export class Admin implements OnInit {
     window.setTimeout(() => this.copySuccess.set(false), 2000);
   }
 
-  formatBytes(bytes: number): string {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  }
-
-  formatRelativeTime(isoString?: string): string {
-    if (!isoString) return '—';
-    const date = new Date(isoString);
-    const now = Date.now();
-    const diff = now - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 1) return 'Vừa xong';
-    if (minutes < 60) return `${minutes} phút trước`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours} giờ trước`;
-    const days = Math.floor(hours / 24);
-    return `${days} ngày trước`;
-  }
 }
