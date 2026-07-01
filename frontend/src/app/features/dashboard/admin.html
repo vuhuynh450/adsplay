@@ -280,12 +280,13 @@
                 </div>
             </div>
 
-            <div class="flex flex-1 items-center justify-center bg-slate-100/80 p-4 md:p-6 dark:bg-black/30">
+            <div data-preview-media-area class="flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-slate-100/80 p-4 md:p-6 dark:bg-black/30">
                 <div
-                    class="flex h-full w-full items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-black shadow-inner dark:border-white/10">
+                    data-preview-media-frame
+                    class="flex min-h-0 h-full w-full items-center justify-center overflow-hidden rounded-[1.75rem] border border-slate-200 bg-black shadow-inner dark:border-white/10">
                     <img *ngIf="isImagePreview()" [src]="getPreviewUrl()" [alt]="previewingVideo()?.originalName || 'Image preview'"
                         class="max-h-full max-w-full object-contain" />
-                    <video *ngIf="!isImagePreview()" [src]="getPreviewUrl()" class="h-full w-full bg-black object-contain"
+                    <video *ngIf="!isImagePreview()" [src]="getPreviewUrl()" class="max-h-full max-w-full bg-black object-contain"
                         controls autoplay playsinline></video>
                 </div>
             </div>
