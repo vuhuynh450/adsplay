@@ -46,16 +46,16 @@ export class DashboardStore {
   initialize() {
     this.refreshAll();
     this.startSystemPolling();
+    this.startDevicePresencePolling();
     this.loadVideoPolicy();
   }
 
   refreshAll() {
     this.loading.set(true);
 
-    const user = this.authService.currentUser();
-    const hasVideosAccess = user?.role === 'admin' || user?.allowedPages.includes('videos');
-    const hasProfilesAccess = user?.role === 'admin' || user?.allowedPages.includes('profiles');
-    const hasDevicesAccess = user?.role === 'admin' || user?.allowedPages.includes('devices');
+    const hasVideosAccess = this.hasPageAccess('videos');
+    const hasProfilesAccess = this.hasPageAccess('profiles');
+    const hasDevicesAccess = this.hasPageAccess('devices');
 
     const requests: Record<string, any> = {};
 
@@ -126,6 +126,24 @@ export class DashboardStore {
         this.isSystemOnline.set(status.online);
         this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
       });
+  }
+
+  startDevicePresencePolling() {
+    interval(30000)
+      .pipe(
+        switchMap(() => this.hasPageAccess('devices') ? this.api.getDevices().pipe(catchError(() => of(null))) : of(null)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((devices) => {
+        if (devices) {
+          this.devices.set(devices);
+        }
+      });
+  }
+
+  private hasPageAccess(page: 'videos' | 'profiles' | 'devices') {
+    const user = this.authService.currentUser();
+    return user?.role === 'admin' || !!user?.allowedPages.includes(page);
   }
 
   refreshSystemStatus() {
