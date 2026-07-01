@@ -296,6 +296,19 @@ export class PlayerSessionService {
     return `rotate(${this.getRotationDegrees()}deg)`;
   }
 
+  getMediaWrapperWidth() {
+    return this.isQuarterTurnOrientation() ? '100vh' : '100%';
+  }
+
+  getMediaWrapperHeight() {
+    return this.isQuarterTurnOrientation() ? '100vw' : '100%';
+  }
+
+  private isQuarterTurnOrientation() {
+    const rotationDegrees = this.getRotationDegrees();
+    return rotationDegrees === 90 || rotationDegrees === 270;
+  }
+
   private resetActivityTimer() {
     if (this.isCursorHidden()) {
       this.zone.run(() => this.isCursorHidden.set(false));

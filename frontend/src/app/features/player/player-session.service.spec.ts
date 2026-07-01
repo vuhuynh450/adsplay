@@ -55,4 +55,22 @@ describe('PlayerSessionService orientation mapping', () => {
     expect(service.getRotationDegrees()).toBe(90);
     expect(service.getMediaWrapperTransform()).toBe('rotate(90deg)');
   });
+
+  it('swaps wrapper dimensions for quarter-turn orientations', () => {
+    setProfileOrientation('landscape');
+    expect(service.getMediaWrapperWidth()).toBe('100%');
+    expect(service.getMediaWrapperHeight()).toBe('100%');
+
+    setProfileOrientation('rotate90');
+    expect(service.getMediaWrapperWidth()).toBe('100vh');
+    expect(service.getMediaWrapperHeight()).toBe('100vw');
+
+    setProfileOrientation('rotate270');
+    expect(service.getMediaWrapperWidth()).toBe('100vh');
+    expect(service.getMediaWrapperHeight()).toBe('100vw');
+
+    setProfileOrientation('rotate180');
+    expect(service.getMediaWrapperWidth()).toBe('100%');
+    expect(service.getMediaWrapperHeight()).toBe('100%');
+  });
 });
