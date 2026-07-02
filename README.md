@@ -247,7 +247,7 @@ npm run test:ci
 ### Top level
 
 - `frontend/` Angular admin UI and player UI
-- `backend/` Express API, upload handling, media streaming, local JSON storage
+- `backend/` Express API, upload handling, media streaming, local SQLite storage
 - `launch-adplay.cjs` one-click launcher used by the helper scripts
 - `start.command` double-click launcher for macOS
 - `start.sh` Terminal launcher for macOS/Linux
@@ -284,7 +284,7 @@ Important frontend files:
 - `backend/src/middleware/`
   Auth, logging, request IDs, error handling
 - `backend/src/db.ts`
-  Local JSON-backed repository
+  Local SQLite-backed repository
 - `backend/src/config.ts`
   Environment config and paths
 
@@ -307,7 +307,7 @@ Important backend files:
 1. Admin logs in
 2. Admin uploads videos
 3. Backend stores the uploaded file locally
-4. Backend creates a video record in `db.json`
+4. Backend creates a video record in the SQLite database
 5. Backend may create poster and HLS assets in the background with FFmpeg
 6. Admin creates profiles and assigns videos to them
 7. A player device opens `/player/:profileSlug`
@@ -316,12 +316,14 @@ Important backend files:
 
 ### Storage model
 
-AdPlay uses local file storage plus a local JSON database.
+AdPlay uses local file storage plus a local SQLite metadata database.
 
 - uploaded video files live under `backend/uploads/`
 - generated poster and HLS assets live under `backend/uploads/processed/`
 - resumable upload session state lives under `backend/uploads/.sessions/`
-- app data lives in `backend/db.json`
+- app metadata lives in `backend/db.sqlite` by default
+
+SQLite starts as a clean metadata database. Old `backend/db.json` records are not imported automatically, so existing users, profiles, device registrations, and video records must be recreated manually after switching from an older JSON-backed build.
 
 This keeps the project simple to run and easy to fork, but it is not meant to be a distributed storage architecture.
 
@@ -452,13 +454,9 @@ Start in:
 
 - `backend/src/db.ts`
 
-### I want to replace local JSON with SQLite/Postgres
+### I want to replace local SQLite with another database
 
-The cleanest seam is:
-
-- keep the route layer
-- keep the service layer
-- replace the repository behavior inside `backend/src/db.ts`
+AdPlay stores metadata in SQLite by default. The cleanest seam for future storage changes is still `backend/src/db.ts`: keep the route and service layers stable and replace the repository behavior there.
 
 ---
 
@@ -469,7 +467,6 @@ Common things people may want to add:
 - image support in addition to video
 - schedule-based playback
 - remote/cloud sync
-- SQLite or Postgres instead of `db.json`
 - per-screen device registration
 - multi-user admin roles
 - adaptive HLS bitrate ladder for weaker networks
@@ -485,7 +482,13 @@ If you run this in production:
 - change the default admin credentials
 - set a strong `JWT_SECRET`
 - run with `NODE_ENV=production`
-- keep regular backups of `db.json` and the `uploads/` folder
+- keep regular backups of the SQLite database and the `uploads/` folder
+- prefer SQLite's `.backup` command for live database backups, for example:
+
+````bash
+sqlite3 backend/db.sqlite ".backup '/path/to/backups/adplay-$(date +%F-%H%M%S).sqlite'"
+````
+
 - make sure the host machine has enough disk space for uploaded videos and generated media assets
 
 ---
