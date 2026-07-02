@@ -133,3 +133,37 @@ test('repository enforces device code uniqueness and relation cleanup', async ()
   const updatedDevice = await dbRepository.findDeviceById(device.id);
   assert.equal(updatedDevice.assignedProfileId, undefined);
 });
+
+test('deleteVideo removes the video from profile playlists', async () => {
+  const video = await dbRepository.saveVideo({
+    filename: 'cleanup.mp4',
+    id: 'video-cleanup',
+    mediaType: 'video',
+    mimeType: 'video/mp4',
+    originalName: 'cleanup.mp4',
+    processingStatus: 'ready',
+    sourceFilename: 'cleanup.mp4',
+    sourceMimeType: 'video/mp4',
+    sourceSize: 40,
+    size: 40,
+    storageProvider: 'local',
+    streamVariant: 'original',
+    uploadedAt: new Date().toISOString(),
+  });
+
+  await dbRepository.upsertProfile({
+    name: 'Cleanup Branch',
+    orientation: 'landscape',
+    videoIds: [video.id],
+  });
+
+  const profileBefore = await dbRepository.findProfileBySlug('cleanup-branch');
+  assert.ok(profileBefore);
+  assert.ok(profileBefore.videoIds.includes(video.id));
+
+  await dbRepository.deleteVideo(video.id);
+
+  const profileAfter = await dbRepository.findProfileBySlug('cleanup-branch');
+  assert.ok(profileAfter);
+  assert.equal(profileAfter.videoIds.includes(video.id), false);
+});

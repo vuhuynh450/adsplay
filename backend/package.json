@@ -41,7 +41,7 @@
   },
   "nodemonConfig": {
     "ignore": [
-      "db.json",
+      "db.sqlite*",
       "uploads/*"
     ]
   }

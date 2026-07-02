@@ -438,19 +438,21 @@ export const dbRepository = {
         return { ...user };
     },
     async updateUser(id: string, updater: (user: User) => void) {
-        const row = findUserRowById(id);
-        if (!row) return null;
-        const user = toUser(row);
-        updater(user);
-        user.updatedAt = new Date().toISOString();
-        const normalized = normalizeUser(user);
-        sqlite.prepare(`
-            UPDATE users
-            SET username = ?, password_hash = ?, role = ?, is_active = ?, must_change_password = ?, allowed_pages = ?, updated_at = ?
-            WHERE id = ?
-        `).run(normalized.username, normalized.passwordHash, normalized.role, boolToInteger(normalized.isActive), boolToInteger(normalized.mustChangePassword), JSON.stringify(normalized.allowedPages), normalized.updatedAt, id);
-        const updatedRow = findUserRowById(id);
-        return updatedRow ? toUser(updatedRow) : null;
+        return sqlite.transaction(() => {
+            const row = findUserRowById(id);
+            if (!row) return null;
+            const user = toUser(row);
+            updater(user);
+            user.updatedAt = new Date().toISOString();
+            const normalized = normalizeUser(user);
+            sqlite.prepare(`
+                UPDATE users
+                SET username = ?, password_hash = ?, role = ?, is_active = ?, must_change_password = ?, allowed_pages = ?, updated_at = ?
+                WHERE id = ?
+            `).run(normalized.username, normalized.passwordHash, normalized.role, boolToInteger(normalized.isActive), boolToInteger(normalized.mustChangePassword), JSON.stringify(normalized.allowedPages), normalized.updatedAt, id);
+            const updatedRow = findUserRowById(id);
+            return updatedRow ? toUser(updatedRow) : null;
+        })();
     },
     async deleteUsers(ids: string[]) {
         const uniqueIds = [...new Set(ids)];
@@ -504,19 +506,21 @@ export const dbRepository = {
         return video;
     },
     async updateVideo(id: string, updater: (video: Video) => void) {
-        const row = findVideoRowById(id);
-        if (!row) return null;
-        const video = toVideo(row);
-        updater(video);
-        video.updatedAt = new Date().toISOString();
-        const normalized = normalizeVideo(video);
-        sqlite.prepare(`
-            UPDATE videos
-            SET filename = ?, source_filename = ?, original_name = ?, media_type = ?, mime_type = ?, source_mime_type = ?, source_size = ?, size = ?, storage_provider = ?, stream_variant = ?, processing_status = ?, processing_error = ?, poster_filename = ?, hls_manifest_path = ?, duration_seconds = ?, width = ?, height = ?, uploaded_at = ?, updated_at = ?
-            WHERE id = ?
-        `).run(normalized.filename, normalized.sourceFilename, normalized.originalName, normalized.mediaType, normalized.mimeType ?? null, normalized.sourceMimeType ?? null, normalized.sourceSize, normalized.size, normalized.storageProvider, normalized.streamVariant, normalized.processingStatus, normalized.processingError ?? null, normalized.posterFilename ?? null, normalized.hlsManifestPath ?? null, normalized.durationSeconds ?? null, normalized.width ?? null, normalized.height ?? null, normalized.uploadedAt, normalized.updatedAt, id);
-        const updatedRow = findVideoRowById(id);
-        return updatedRow ? toVideo(updatedRow) : null;
+        return sqlite.transaction(() => {
+            const row = findVideoRowById(id);
+            if (!row) return null;
+            const video = toVideo(row);
+            updater(video);
+            video.updatedAt = new Date().toISOString();
+            const normalized = normalizeVideo(video);
+            sqlite.prepare(`
+                UPDATE videos
+                SET filename = ?, source_filename = ?, original_name = ?, media_type = ?, mime_type = ?, source_mime_type = ?, source_size = ?, size = ?, storage_provider = ?, stream_variant = ?, processing_status = ?, processing_error = ?, poster_filename = ?, hls_manifest_path = ?, duration_seconds = ?, width = ?, height = ?, uploaded_at = ?, updated_at = ?
+                WHERE id = ?
+            `).run(normalized.filename, normalized.sourceFilename, normalized.originalName, normalized.mediaType, normalized.mimeType ?? null, normalized.sourceMimeType ?? null, normalized.sourceSize, normalized.size, normalized.storageProvider, normalized.streamVariant, normalized.processingStatus, normalized.processingError ?? null, normalized.posterFilename ?? null, normalized.hlsManifestPath ?? null, normalized.durationSeconds ?? null, normalized.width ?? null, normalized.height ?? null, normalized.uploadedAt, normalized.updatedAt, id);
+            const updatedRow = findVideoRowById(id);
+            return updatedRow ? toVideo(updatedRow) : null;
+        })();
     },
     async deleteProfile(id: string) {
         const result = sqlite.prepare('DELETE FROM profiles WHERE id = ?').run(id);
