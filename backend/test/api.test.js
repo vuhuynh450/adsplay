@@ -40,6 +40,10 @@ const {
   __resetRemoveFileForTests,
   __setRemoveFileForTests,
 } = require('../dist/services/video.service');
+const {
+  __configureLoginRateLimitForTests,
+  __resetLoginRateLimitForTests,
+} = require('../dist/routes/auth.routes');
 const app = createApp();
 const resumableChunkSizeBytes = 8 * 1024 * 1024;
 
@@ -94,6 +98,7 @@ test.beforeEach(() => {
   __resetDeviceCodeGeneratorForTests();
   __resetPendingDeviceRegistrationsForTests();
   __resetRemoveFileForTests();
+  __resetLoginRateLimitForTests();
 });
 
 test.after(async () => {
@@ -127,6 +132,128 @@ test('login response includes user role + page metadata', async () => {
   assert.ok(response.body.user);
   assert.equal(response.body.user.role, 'admin');
   assert.ok(Array.isArray(response.body.user.allowedPages));
+});
+
+test('login rate limit blocks after repeated failed credentials for the same username', async () => {
+  __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
+
+  const firstFailure = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'wrong-password',
+  });
+  assert.equal(firstFailure.status, 401);
+  assert.equal(firstFailure.body.error.code, 'INVALID_CREDENTIALS');
+
+  const secondFailure = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'wrong-password',
+  });
+  assert.equal(secondFailure.status, 401);
+  assert.equal(secondFailure.body.error.code, 'INVALID_CREDENTIALS');
+
+  const limited = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'admin',
+  });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.body.error.code, 'RATE_LIMITED');
+  assert.equal(limited.body.error.message, 'Too many login attempts. Please try again later.');
+});
+
+test('successful login clears previous failed login attempts', async () => {
+  __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
+
+  const failure = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'wrong-password',
+  });
+  assert.equal(failure.status, 401);
+
+  const success = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'admin',
+  });
+  assert.equal(success.status, 200);
+  assert.ok(success.body.token);
+
+  const nextFailure = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'wrong-password',
+  });
+  assert.equal(nextFailure.status, 401);
+
+  const stillNotLimited = await request(app).post('/api/auth/login').send({
+    username: 'admin',
+    password: 'wrong-password',
+  });
+  assert.equal(stillNotLimited.status, 401);
+  assert.equal(stillNotLimited.body.error.code, 'INVALID_CREDENTIALS');
+});
+
+test('login rate limit is scoped by normalized username', async () => {
+  __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
+
+  const firstFailure = await request(app).post('/api/auth/login').send({
+    username: 'missing_user',
+    password: 'wrong-password',
+  });
+  assert.equal(firstFailure.status, 401);
+
+  const secondFailure = await request(app).post('/api/auth/login').send({
+    username: 'MISSING_USER ',
+    password: 'wrong-password',
+  });
+  assert.equal(secondFailure.status, 401);
+
+  const limitedSameNormalizedUsername = await request(app).post('/api/auth/login').send({
+    username: ' missing_user ',
+    password: 'wrong-password',
+  });
+  assert.equal(limitedSameNormalizedUsername.status, 429);
+  assert.equal(limitedSameNormalizedUsername.body.error.code, 'RATE_LIMITED');
+
+  const otherUsername = await request(app).post('/api/auth/login').send({
+    username: 'another_missing_user',
+    password: 'wrong-password',
+  });
+  assert.equal(otherUsername.status, 401);
+  assert.equal(otherUsername.body.error.code, 'INVALID_CREDENTIALS');
+});
+
+test('inactive account login attempts count toward login rate limit', async () => {
+  __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
+  const bcrypt = require('bcryptjs');
+  const passwordHash = await bcrypt.hash('123456', 10);
+
+  await dbRepository.createUser({
+    username: 'staff_inactive_limited',
+    passwordHash,
+    role: 'staff',
+    isActive: false,
+    mustChangePassword: false,
+    allowedPages: ['videos'],
+  });
+
+  const firstFailure = await request(app).post('/api/auth/login').send({
+    username: 'staff_inactive_limited',
+    password: '123456',
+  });
+  assert.equal(firstFailure.status, 403);
+  assert.equal(firstFailure.body.error.code, 'ACCOUNT_INACTIVE');
+
+  const secondFailure = await request(app).post('/api/auth/login').send({
+    username: 'staff_inactive_limited',
+    password: '123456',
+  });
+  assert.equal(secondFailure.status, 403);
+  assert.equal(secondFailure.body.error.code, 'ACCOUNT_INACTIVE');
+
+  const limited = await request(app).post('/api/auth/login').send({
+    username: 'staff_inactive_limited',
+    password: '123456',
+  });
+  assert.equal(limited.status, 429);
+  assert.equal(limited.body.error.code, 'RATE_LIMITED');
 });
 
 test('inactive staff login returns ACCOUNT_INACTIVE', async () => {
