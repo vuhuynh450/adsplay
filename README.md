@@ -376,8 +376,8 @@ Example:
 ```env
 PORT=3000
 JWT_SECRET=change-me
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin
+ADMIN_USERNAME=vuhuynh450
+ADMIN_PASSWORD=vuhuynh450
 MAX_UPLOAD_SIZE_MB=2048
 MEDIA_TRANSCODE_ENABLED=true
 RESUMABLE_CHUNK_SIZE_MB=8
@@ -502,7 +502,7 @@ AdPlay là hệ thống phát nội dung nội bộ qua mạng LAN, phù hợp c
 1. Chạy `start.command` trên macOS, `./start.sh` trên Linux/macOS Terminal, hoặc `start.bat` trên Windows
 2. Chờ lần chạy đầu tự cài đặt và build xong
 3. Vào trang quản trị: `http://localhost:3000/admin`
-4. Đăng nhập bằng `admin / admin`
+4. Đăng nhập bằng `vuhuynh450 / vuhuynh450`
 5. Mở file `AdPlay Access.txt` để lấy link player cho TV/tablet cùng mạng nội bộ
 6. Upload video
 7. Tạo Profile

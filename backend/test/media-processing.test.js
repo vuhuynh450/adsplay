@@ -29,8 +29,8 @@ const app = createApp();
 
 const loginAsAdmin = async () => {
   const loginResponse = await request(app).post('/api/auth/login').send({
-    password: 'admin',
-    username: 'admin',
+    password: 'vuhuynh450',
+    username: 'vuhuynh450',
   });
 
   assert.equal(loginResponse.status, 200);

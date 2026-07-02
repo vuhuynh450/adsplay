@@ -103,8 +103,8 @@ const ensureManagedEnvFile = () => {
 
     ensureValue('PORT', '3000');
     ensureValue('JWT_SECRET', crypto.randomBytes(32).toString('hex'), isPlaceholderSecret(next.JWT_SECRET));
-    ensureValue('ADMIN_USERNAME', 'admin');
-    ensureValue('ADMIN_PASSWORD', 'admin');
+    ensureValue('ADMIN_USERNAME', 'vuhuynh450');
+    ensureValue('ADMIN_PASSWORD', 'vuhuynh450');
     ensureValue('MAX_UPLOAD_SIZE_MB', '2048');
     ensureValue('MEDIA_TRANSCODE_ENABLED', 'true');
     ensureValue('RESUMABLE_CHUNK_SIZE_MB', '8');

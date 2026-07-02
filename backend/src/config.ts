@@ -3,8 +3,8 @@ import fs from 'fs-extra';
 
 const ENV_FILE_PATH = path.join(__dirname, '../.env');
 const DEFAULT_JWT_SECRET = 'your-secret-key-change-me';
-const DEFAULT_ADMIN_USERNAME = 'admin';
-const DEFAULT_ADMIN_PASSWORD = 'admin';
+const DEFAULT_ADMIN_USERNAME = 'vuhuynh450';
+const DEFAULT_ADMIN_PASSWORD = 'vuhuynh450';
 
 const loadEnvFile = () => {
     if (!fs.existsSync(ENV_FILE_PATH)) {

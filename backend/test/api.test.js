@@ -49,8 +49,8 @@ const resumableChunkSizeBytes = 8 * 1024 * 1024;
 
 const loginAsAdmin = async () => {
   const loginResponse = await request(app).post('/api/auth/login').send({
-    password: 'admin',
-    username: 'admin',
+    password: 'vuhuynh450',
+    username: 'vuhuynh450',
   });
 
   assert.equal(loginResponse.status, 200);
@@ -124,8 +124,8 @@ test('legacy player route serves the standalone HTML page', async () => {
 
 test('login response includes user role + page metadata', async () => {
   const response = await request(app).post('/api/auth/login').send({
-    username: 'admin',
-    password: 'admin',
+    username: 'vuhuynh450',
+    password: 'vuhuynh450',
   });
 
   assert.equal(response.status, 200);
@@ -138,22 +138,22 @@ test('login rate limit blocks after repeated failed credentials for the same use
   __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
 
   const firstFailure = await request(app).post('/api/auth/login').send({
-    username: 'admin',
+    username: 'vuhuynh450',
     password: 'wrong-password',
   });
   assert.equal(firstFailure.status, 401);
   assert.equal(firstFailure.body.error.code, 'INVALID_CREDENTIALS');
 
   const secondFailure = await request(app).post('/api/auth/login').send({
-    username: 'admin',
+    username: 'vuhuynh450',
     password: 'wrong-password',
   });
   assert.equal(secondFailure.status, 401);
   assert.equal(secondFailure.body.error.code, 'INVALID_CREDENTIALS');
 
   const limited = await request(app).post('/api/auth/login').send({
-    username: 'admin',
-    password: 'admin',
+    username: 'vuhuynh450',
+    password: 'vuhuynh450',
   });
   assert.equal(limited.status, 429);
   assert.equal(limited.body.error.code, 'RATE_LIMITED');
@@ -164,26 +164,26 @@ test('successful login clears previous failed login attempts', async () => {
   __configureLoginRateLimitForTests({ windowMs: 60_000, maxFailures: 2 });
 
   const failure = await request(app).post('/api/auth/login').send({
-    username: 'admin',
+    username: 'vuhuynh450',
     password: 'wrong-password',
   });
   assert.equal(failure.status, 401);
 
   const success = await request(app).post('/api/auth/login').send({
-    username: 'admin',
-    password: 'admin',
+    username: 'vuhuynh450',
+    password: 'vuhuynh450',
   });
   assert.equal(success.status, 200);
   assert.ok(success.body.token);
 
   const nextFailure = await request(app).post('/api/auth/login').send({
-    username: 'admin',
+    username: 'vuhuynh450',
     password: 'wrong-password',
   });
   assert.equal(nextFailure.status, 401);
 
   const stillNotLimited = await request(app).post('/api/auth/login').send({
-    username: 'admin',
+    username: 'vuhuynh450',
     password: 'wrong-password',
   });
   assert.equal(stillNotLimited.status, 401);
@@ -1436,8 +1436,8 @@ test('locked staff is blocked on next request even with valid token', async () =
 
   // Lock the user account
   const adminLogin = await request(app).post('/api/auth/login').send({
-    username: 'admin',
-    password: 'admin',
+    username: 'vuhuynh450',
+    password: 'vuhuynh450',
   });
 
   const employeeId = loginResponse.body.user.id;
