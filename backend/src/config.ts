@@ -104,7 +104,7 @@ export const getConfig = (): AppConfig => {
     const uploadsDir = process.env.UPLOADS_DIR || path.join(__dirname, '../uploads');
     const processedUploadsDir = path.join(uploadsDir, 'processed');
     const uploadSessionsDir = path.join(uploadsDir, '.sessions');
-    const dbFile = process.env.DB_FILE || path.join(__dirname, '../db.json');
+    const dbFile = process.env.DB_FILE || path.join(__dirname, '../db.sqlite');
     const frontendDistRoot =
         process.env.FRONTEND_DIST_DIR || path.join(__dirname, '../../frontend/dist/frontend');
     const frontendBrowserDir = path.join(frontendDistRoot, 'browser');
