@@ -2,7 +2,7 @@ import { Component, HostListener, OnInit, computed, inject, signal } from '@angu
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
-import { ApiService, Video } from '../../services/api.service';
+import { ApiService, StorageHealthStatus, Video } from '../../services/api.service';
 import { ThemeToggle } from '../../shared/ui/theme-toggle/theme-toggle';
 import { UploadMediaPayload, VideoList } from './components/video-list/video-list';
 import { ProfileManager } from './components/profile-manager/profile-manager';
@@ -229,6 +229,58 @@ export class Admin implements OnInit {
   formatPreviewUploadedAt() {
     const video = this.previewingVideo();
     return video ? new Date(video.uploadedAt).toLocaleString() : '';
+  }
+
+  formatBytes(bytes?: number | null) {
+    if (bytes === null || bytes === undefined || !Number.isFinite(bytes)) {
+      return 'Không đọc được';
+    }
+
+    if (bytes === 0) {
+      return '0 B';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, unitIndex);
+
+    return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  }
+
+  getStorageStatusLabel(status?: StorageHealthStatus) {
+    if (status === 'critical') {
+      return 'Nguy cấp';
+    }
+
+    if (status === 'warning') {
+      return 'Cảnh báo';
+    }
+
+    return 'Ổn định';
+  }
+
+  getStorageStatusBadgeClasses(status?: StorageHealthStatus) {
+    if (status === 'critical') {
+      return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+    }
+
+    if (status === 'warning') {
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+    }
+
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+  }
+
+  getStorageUsageBarClasses(status?: StorageHealthStatus) {
+    if (status === 'critical') {
+      return 'bg-red-500';
+    }
+
+    if (status === 'warning') {
+      return 'bg-amber-500';
+    }
+
+    return 'bg-brand-primary';
   }
 
   private fallbackCopyTextToClipboard(text: string) {

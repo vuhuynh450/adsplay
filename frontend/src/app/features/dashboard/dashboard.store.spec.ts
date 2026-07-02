@@ -54,7 +54,34 @@ describe('DashboardStore', () => {
         .mockReturnValueOnce(of([device('2026-07-01T09:24:21.000Z')])),
       getPendingDeviceRegistrations: vi.fn().mockReturnValue(of([])),
       getProfiles: vi.fn().mockReturnValue(of([])),
-      getSystemStatus: vi.fn().mockReturnValue(of({ localIps: [], online: true, uptime: 1 })),
+      getSystemStatus: vi.fn().mockReturnValue(of({
+        localIps: [],
+        online: true,
+        storage: {
+          database: {
+            mainBytes: 100,
+            path: '/tmp/db.sqlite',
+            shmBytes: 0,
+            totalBytes: 100,
+            walBytes: 0,
+          },
+          directories: {
+            processedBytes: 20,
+            sessionsBytes: 30,
+            sourceFilesBytes: 10,
+            uploadsRootBytes: 60,
+          },
+          disk: {
+            freeBytes: 900,
+            path: '/tmp/uploads',
+            status: 'ok',
+            totalBytes: 1000,
+            usedBytes: 100,
+            usedPercent: 10,
+          },
+        },
+        uptime: 1,
+      })),
       getVideos: vi.fn().mockReturnValue(of([])),
       getVideoPolicy: vi.fn().mockReturnValue(of({
         allowedMimeTypes: [],
@@ -101,5 +128,13 @@ describe('DashboardStore', () => {
     vi.advanceTimersByTime(30000);
 
     expect(api.getDevices).not.toHaveBeenCalled();
+  });
+
+  it('preserves storage status from system polling', () => {
+    store.initialize();
+
+    expect(store.systemInfo()?.storage?.disk?.status).toBe('ok');
+    expect(store.systemInfo()?.storage?.directories.sourceFilesBytes).toBe(10);
+    expect(store.systemInfo()?.storage?.database.totalBytes).toBe(100);
   });
 });

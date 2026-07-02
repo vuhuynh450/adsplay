@@ -8,6 +8,7 @@ import {
   PendingDeviceRegistration,
   Profile,
   ProfileOrientation,
+  SystemStatus,
   Video,
 } from '../../services/api.service';
 import { ToastService } from '../../shared/services/toast.service';
@@ -39,7 +40,7 @@ export class DashboardStore {
   readonly uploadProgress = signal(0);
   readonly uploadStatusLabel = signal('Sẵn sàng tải lên');
   readonly isSystemOnline = signal(true);
-  readonly systemInfo = signal<{ uptime: number; localIps: string[] } | null>(null);
+  readonly systemInfo = signal<SystemStatus | null>(null);
   readonly maxUploadSizeBytes = signal(2 * 1024 * 1024 * 1024);
   readonly activePlayerCount = computed(() => this.profiles().filter((profile) => this.isOnline(profile.lastSeen)).length);
 
@@ -124,7 +125,7 @@ export class DashboardStore {
         }
 
         this.isSystemOnline.set(status.online);
-        this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
+        this.systemInfo.set(status);
       });
   }
 
@@ -159,7 +160,7 @@ export class DashboardStore {
       }
 
       this.isSystemOnline.set(status.online);
-      this.systemInfo.set({ localIps: status.localIps, uptime: status.uptime });
+      this.systemInfo.set(status);
     });
   }
 

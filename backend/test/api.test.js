@@ -36,6 +36,10 @@ const {
   __configureRegisterRateLimitForTests,
   __resetRegisterRateLimitForTests,
 } = require('../dist/routes/device.routes');
+const {
+  __resetRemoveFileForTests,
+  __setRemoveFileForTests,
+} = require('../dist/services/video.service');
 const app = createApp();
 const resumableChunkSizeBytes = 8 * 1024 * 1024;
 
@@ -89,6 +93,7 @@ test.beforeEach(() => {
   __resetRegisterRateLimitForTests();
   __resetDeviceCodeGeneratorForTests();
   __resetPendingDeviceRegistrationsForTests();
+  __resetRemoveFileForTests();
 });
 
 test.after(async () => {
@@ -363,6 +368,35 @@ test('auth and system status flow works', async () => {
   assert.equal(malformedAdminAttempt.status, 403);
 });
 
+test('system status includes local storage usage details', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const sourceFilePath = path.join(process.env.UPLOADS_DIR, 'source-test.mp4');
+  const processedFilePath = path.join(process.env.UPLOADS_DIR, 'processed', 'hls', 'segment-000.ts');
+  const sessionFilePath = path.join(process.env.UPLOADS_DIR, '.sessions', '11111111-1111-4111-8111-111111111111', 'chunks', '000000.part');
+
+  await fs.outputFile(sourceFilePath, Buffer.alloc(10));
+  await fs.outputFile(processedFilePath, Buffer.alloc(20));
+  await fs.outputFile(sessionFilePath, Buffer.alloc(30));
+
+  const response = await request(app)
+    .get('/api/system/status')
+    .set(authHeader);
+
+  assert.equal(response.status, 200);
+  assert.ok(response.body.storage);
+  assert.ok(response.body.storage.disk === null || typeof response.body.storage.disk.totalBytes === 'number');
+  assert.equal(typeof response.body.storage.directories.uploadsRootBytes, 'number');
+  assert.equal(typeof response.body.storage.directories.sourceFilesBytes, 'number');
+  assert.equal(typeof response.body.storage.directories.processedBytes, 'number');
+  assert.equal(typeof response.body.storage.directories.sessionsBytes, 'number');
+  assert.equal(response.body.storage.directories.sourceFilesBytes, 10);
+  assert.ok(response.body.storage.directories.processedBytes >= 20);
+  assert.ok(response.body.storage.directories.sessionsBytes >= 30);
+  assert.equal(response.body.storage.database.path, process.env.DB_FILE);
+  assert.equal(typeof response.body.storage.database.totalBytes, 'number');
+});
+
 test('staff without videos permission cannot upload or delete videos', async () => {
   const bcrypt = require('bcryptjs');
   const { authHeader } = await loginAsAdmin();
@@ -412,6 +446,119 @@ test('staff without videos permission cannot upload or delete videos', async () 
     .delete(`/api/videos/${adminUpload.body.id}`)
     .set(authHeader);
   assert.equal(cleanupResponse.status, 200);
+});
+
+test('delete video removes database record, playlist references, and local files', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('video content'), {
+      contentType: 'video/mp4',
+      filename: 'delete-files.mp4',
+    });
+  assert.equal(uploadResponse.status, 200);
+
+  const video = uploadResponse.body;
+  const sourcePath = path.join(process.env.UPLOADS_DIR, video.sourceFilename);
+  const posterRelativePath = path.join('processed', 'posters', `${video.id}.jpg`);
+  const hlsRelativePath = path.join('processed', 'hls', video.id, 'playlist.m3u8');
+  const posterPath = path.join(process.env.UPLOADS_DIR, posterRelativePath);
+  const hlsDir = path.dirname(path.join(process.env.UPLOADS_DIR, hlsRelativePath));
+
+  await fs.outputFile(posterPath, Buffer.from('poster'));
+  await fs.outputFile(path.join(hlsDir, 'playlist.m3u8'), Buffer.from('#EXTM3U'));
+
+  await dbRepository.updateVideo(video.id, (draft) => {
+    draft.posterFilename = posterRelativePath;
+    draft.hlsManifestPath = hlsRelativePath;
+  });
+
+  const profileResponse = await request(app)
+    .post('/api/profiles')
+    .set(authHeader)
+    .send({
+      name: 'Delete Safety Screen',
+      videoIds: [video.id],
+    });
+  assert.equal(profileResponse.status, 200);
+
+  const deleteResponse = await request(app)
+    .delete(`/api/videos/${video.id}`)
+    .set(authHeader);
+  assert.equal(deleteResponse.status, 200);
+  assert.deepEqual(deleteResponse.body, { success: true });
+
+  assert.equal(await dbRepository.findVideoById(video.id), null);
+  assert.equal(await fs.pathExists(sourcePath), false);
+  assert.equal(await fs.pathExists(posterPath), false);
+  assert.equal(await fs.pathExists(hlsDir), false);
+
+  const profileAfter = await request(app)
+    .get(`/api/profiles/${profileResponse.body.id}`)
+    .set(authHeader);
+  assert.equal(profileAfter.status, 200);
+  assert.equal(profileAfter.body.videoIds.includes(video.id), false);
+});
+
+test('delete video keeps database deleted when local file cleanup fails', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const uploadResponse = await request(app)
+    .post('/api/videos')
+    .set(authHeader)
+    .attach('video', Buffer.from('video content'), {
+      contentType: 'video/mp4',
+      filename: 'cleanup-fails.mp4',
+    });
+  assert.equal(uploadResponse.status, 200);
+
+  const video = uploadResponse.body;
+  const sourcePath = path.join(process.env.UPLOADS_DIR, video.sourceFilename);
+  const originalConsoleError = console.error;
+  const logLines = [];
+
+  console.error = (line) => {
+    logLines.push(line);
+  };
+
+  __setRemoveFileForTests(async () => {
+    throw new Error('simulated remove failure');
+  });
+
+  try {
+    const deleteResponse = await request(app)
+      .delete(`/api/videos/${video.id}`)
+      .set(authHeader);
+
+    assert.equal(deleteResponse.status, 200);
+    assert.deepEqual(deleteResponse.body, { success: true });
+  } finally {
+    console.error = originalConsoleError;
+    __resetRemoveFileForTests();
+    await fs.remove(sourcePath);
+  }
+
+  assert.equal(await dbRepository.findVideoById(video.id), null);
+  assert.ok(logLines.some((line) => {
+    const entry = JSON.parse(line);
+    return entry.event === 'video.delete_file_failed' &&
+      entry.videoId === video.id &&
+      entry.filePath === sourcePath &&
+      entry.error === 'simulated remove failure';
+  }));
+});
+
+test('delete missing video returns VIDEO_NOT_FOUND', async () => {
+  const { authHeader } = await loginAsAdmin();
+
+  const response = await request(app)
+    .delete('/api/videos/not-a-real-video')
+    .set(authHeader);
+
+  assert.equal(response.status, 404);
+  assert.equal(response.body.error.code, 'VIDEO_NOT_FOUND');
 });
 
 test('video upload and profile lifecycle work end-to-end', async () => {

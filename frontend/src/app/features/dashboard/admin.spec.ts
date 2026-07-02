@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
-import { ApiService, Video } from '../../services/api.service';
+import { ApiService, SystemStatus, Video } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { DashboardStore } from './dashboard.store';
 import { Admin } from './admin';
@@ -22,6 +22,35 @@ const video = (partial: Partial<Video> = {}): Video => ({
   uploadedAt: '2026-07-01T00:00:00.000Z',
   ...partial,
 });
+
+const systemStatusWithStorage: SystemStatus = {
+  localIps: ['192.168.1.10'],
+  online: true,
+  storage: {
+    database: {
+      mainBytes: 1024,
+      path: '/tmp/db.sqlite',
+      shmBytes: 0,
+      totalBytes: 1024,
+      walBytes: 0,
+    },
+    directories: {
+      processedBytes: 2 * 1024 * 1024,
+      sessionsBytes: null,
+      sourceFilesBytes: 5 * 1024 * 1024,
+      uploadsRootBytes: 7 * 1024 * 1024,
+    },
+    disk: {
+      freeBytes: 40 * 1024 * 1024,
+      path: '/tmp/uploads',
+      status: 'warning',
+      totalBytes: 100 * 1024 * 1024,
+      usedBytes: 60 * 1024 * 1024,
+      usedPercent: 60,
+    },
+  },
+  uptime: 1,
+};
 
 describe('Admin preview modal', () => {
   beforeEach(async () => {
@@ -87,9 +116,32 @@ describe('Admin preview modal', () => {
     expect(videoElement.classList.contains('max-h-full')).toBe(true);
     expect(videoElement.classList.contains('h-full')).toBe(false);
   });
+
+  it('renders storage dashboard values and missing field fallback', async () => {
+    TestBed.overrideComponent(Admin, {
+      set: {
+        providers: [{ provide: DashboardStore, useValue: createStoreStub(systemStatusWithStorage) }],
+      },
+    });
+
+    const fixture = TestBed.createComponent(Admin);
+    fixture.detectChanges();
+    fixture.componentInstance.activeTab.set('system');
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+
+    expect(text).toContain('Dung Lượng Lưu Trữ');
+    expect(text).toContain('Cảnh báo');
+    expect(text).toContain('60%');
+    expect(text).toContain('5.0 MB');
+    expect(text).toContain('2.0 MB');
+    expect(text).toContain('Không đọc được');
+    expect(text).toContain('1.0 KB');
+  });
 });
 
-function createStoreStub() {
+function createStoreStub(systemInfo: SystemStatus = { localIps: [], online: true, uptime: 1 }) {
   return {
     activePlayerCount: () => 0,
     assignDeviceProfile: vi.fn(),
@@ -110,7 +162,7 @@ function createStoreStub() {
     renameDevice: vi.fn(),
     saveProfile: vi.fn(),
     refreshAll: vi.fn(),
-    systemInfo: () => ({ localIps: [], uptime: 1 }),
+    systemInfo: () => systemInfo,
     unassignDeviceProfile: vi.fn(),
     uploadMedia: vi.fn(),
     uploadProgress: () => 0,

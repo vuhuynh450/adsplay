@@ -129,6 +129,39 @@ export interface VideoPolicy {
     storageTargets: ['local'];
 }
 
+export type StorageHealthStatus = 'ok' | 'warning' | 'critical';
+
+export interface StorageStatus {
+    database: {
+        mainBytes: number | null;
+        path: string;
+        shmBytes: number | null;
+        totalBytes: number | null;
+        walBytes: number | null;
+    };
+    directories: {
+        processedBytes: number | null;
+        sessionsBytes: number | null;
+        sourceFilesBytes: number | null;
+        uploadsRootBytes: number | null;
+    };
+    disk: {
+        freeBytes: number;
+        path: string;
+        status: StorageHealthStatus;
+        totalBytes: number;
+        usedBytes: number;
+        usedPercent: number;
+    } | null;
+}
+
+export interface SystemStatus {
+    localIps: string[];
+    online: boolean;
+    storage?: StorageStatus;
+    uptime: number;
+}
+
 export interface UploadSession {
     chunkSizeBytes: number;
     createdAt: string;
@@ -300,8 +333,8 @@ export class ApiService {
         return this.http.delete(`${this.apiUrl}/profiles/${id}`);
     }
 
-    getSystemStatus(): Observable<{ online: boolean; uptime: number; localIps: string[] }> {
-        return this.http.get<{ online: boolean; uptime: number; localIps: string[] }>(`${this.apiUrl}/system/status`);
+    getSystemStatus(): Observable<SystemStatus> {
+        return this.http.get<SystemStatus>(`${this.apiUrl}/system/status`);
     }
 
     getEmployees(): Observable<EmployeeView[]> {

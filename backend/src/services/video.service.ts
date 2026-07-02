@@ -4,12 +4,25 @@ import path from 'node:path';
 import { dbRepository } from '../db';
 import { getConfig } from '../config';
 import { AppError } from '../errors';
+import { logError } from '../logger';
 import type { Video } from '../types';
 import { enqueueVideoProcessing } from './media.service';
 
 const config = getConfig();
 const VIDEO_MIME_TYPES: string[] = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
 const IMAGE_MIME_TYPES: string[] = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+type RemoveFile = (filePath: string) => Promise<void>;
+
+let removeFile: RemoveFile = (filePath) => fs.remove(filePath);
+
+export const __setRemoveFileForTests = (nextRemoveFile: RemoveFile) => {
+    removeFile = nextRemoveFile;
+};
+
+export const __resetRemoveFileForTests = () => {
+    removeFile = (filePath) => fs.remove(filePath);
+};
 
 export type UploadStorageTarget = 'local';
 
@@ -187,11 +200,24 @@ export const deleteVideo = async (id: string) => {
         filePaths.add(path.join(config.uploadsDir, path.dirname(video.hlsManifestPath)));
     }
 
-    for (const filePath of filePaths) {
-        if (await fs.pathExists(filePath)) {
-            await fs.remove(filePath);
-        }
+    const deletedVideo = await dbRepository.deleteVideo(id);
+    if (!deletedVideo) {
+        throw new AppError(404, 'VIDEO_NOT_FOUND', 'Video not found.');
     }
 
-    await dbRepository.deleteVideo(id);
+    for (const filePath of filePaths) {
+        if (!(await fs.pathExists(filePath))) {
+            continue;
+        }
+
+        try {
+            await removeFile(filePath);
+        } catch (error) {
+            logError('video.delete_file_failed', {
+                error: error instanceof Error ? error.message : String(error),
+                filePath,
+                videoId: id,
+            });
+        }
+    }
 };
