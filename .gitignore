@@ -23,9 +23,13 @@ backend/db.sqlite-wal
 
 # Environment
 .env
+.env.docker
 
 # Logs
 *.log
+
+# Docker persistent data
+data/
 
 # Local launcher output
 AdPlay Access.txt
