@@ -15,7 +15,7 @@ const frontendDistDir = path.join(tmpRoot, 'frontend');
 fs.ensureDirSync(frontendDistDir);
 fs.writeFileSync(path.join(frontendDistDir, 'index.html'), '<html><body>ok</body></html>');
 
-process.env.DB_FILE = path.join(tmpRoot, 'db.json');
+process.env.DB_FILE = path.join(tmpRoot, 'db.sqlite');
 process.env.UPLOADS_DIR = path.join(tmpRoot, 'uploads');
 process.env.FRONTEND_DIST_DIR = frontendDistDir;
 process.env.JWT_SECRET = 'test-secret';

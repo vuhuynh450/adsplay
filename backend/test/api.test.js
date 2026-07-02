@@ -15,7 +15,7 @@ fs.writeFileSync(
   '<html><body>legacy player</body></html>',
 );
 
-process.env.DB_FILE = path.join(tmpRoot, 'db.json');
+process.env.DB_FILE = path.join(tmpRoot, 'db.sqlite');
 process.env.UPLOADS_DIR = path.join(tmpRoot, 'uploads');
 process.env.FRONTEND_DIST_DIR = frontendDistDir;
 process.env.JWT_SECRET = 'test-secret';
