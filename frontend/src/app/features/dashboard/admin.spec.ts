@@ -4,7 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 import { ApiService, SystemStatus, Video } from '../../services/api.service';
 import { AuthService } from '../../services/auth.service';
 import { DashboardStore } from './dashboard.store';
-import { Admin } from './admin';
+import { Admin, buildPlayerUrl } from './admin';
 
 const video = (partial: Partial<Video> = {}): Video => ({
   createdAt: '2026-07-01T00:00:00.000Z',
@@ -138,6 +138,12 @@ describe('Admin preview modal', () => {
     expect(text).toContain('2.0 MB');
     expect(text).toContain('Không đọc được');
     expect(text).toContain('1.0 KB');
+  });
+
+  it('keeps the browser domain for the player link when opened from a domain', () => {
+    expect(buildPlayerUrl('https://ads.example.com', ['172.18.0.2'])).toBe(
+      'https://ads.example.com/device',
+    );
   });
 });
 

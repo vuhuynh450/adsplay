@@ -35,6 +35,18 @@ const ADMIN_MENU_ITEMS: MenuItem[] = [
   { key: 'employees', label: 'Nhân Viên', route: '/admin/employees', description: 'Quản lý tài khoản nhân viên' },
 ];
 
+export const buildPlayerUrl = (origin: string, localIps: string[] = []) => {
+  const url = new URL(origin);
+  const shouldUseLocalIp = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  const localIp = localIps[0];
+
+  if (shouldUseLocalIp && localIp) {
+    url.hostname = localIp;
+  }
+
+  return `${url.origin}/device`;
+};
+
 @Component({
   selector: 'app-admin',
   imports: [CommonModule, RouterModule, VideoList, ProfileManager, DeviceManager, ThemeToggle, ConfirmModal, Employees],
@@ -53,13 +65,7 @@ export class Admin implements OnInit {
       return '';
     }
 
-    const url = new URL(window.location.origin);
-    const localIp = this.store.systemInfo()?.localIps?.[0];
-    if (localIp) {
-      url.hostname = localIp;
-    }
-
-    return `${url.origin}/device`;
+    return buildPlayerUrl(window.location.origin, this.store.systemInfo()?.localIps);
   });
 
   activeTab = signal<AdminPage>('videos');
