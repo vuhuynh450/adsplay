@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "ts-node src/server.ts",
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --exec \"ts-node --files\" src/server.ts",
     "build": "node ./node_modules/typescript/bin/tsc",
     "start:prod": "node dist/server.js",
     "test": "npm run build && node --test test/**/*.test.js"
