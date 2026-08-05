@@ -77,7 +77,10 @@ describe('Admin preview modal', () => {
         },
         {
           provide: ApiService,
-          useValue: { getMediaStreamUrl: (item: Video) => `/api/videos/${item.id}/stream` },
+          useValue: {
+            getMediaStreamUrl: (item: Video) => `/api/videos/${item.id}/stream`,
+            getVideoHlsManifestUrl: (item: Video) => `/api/videos/${item.id}/hls/playlist.m3u8`,
+          },
         },
         {
           provide: AuthService,
@@ -144,6 +147,47 @@ describe('Admin preview modal', () => {
     expect(buildPlayerUrl('https://ads.example.com', ['172.18.0.2'])).toBe(
       'https://ads.example.com/device',
     );
+  });
+
+  it('labels a ready hls-only preview with the HLS-only label', () => {
+    const fixture = TestBed.createComponent(Admin);
+    const component = fixture.componentInstance;
+
+    component.openPreview(video({ streamVariant: 'hls-only' }));
+
+    expect(component.getPreviewStatusLabel()).toBe('Sẵn sàng HLS gốc');
+  });
+
+  it('uses the HLS manifest URL for a ready hls-only preview', () => {
+    const fixture = TestBed.createComponent(Admin);
+    const component = fixture.componentInstance;
+    const hlsOnlyVideo = video({
+      hlsManifestPath: 'processed/hls/v1/playlist.m3u8',
+      streamVariant: 'hls-only',
+    });
+
+    component.openPreview(hlsOnlyVideo);
+
+    expect(component.getPreviewUrl()).toBe('/api/videos/video-1/hls/playlist.m3u8');
+  });
+
+  it('keeps the stream URL for a legacy ready video preview', () => {
+    const fixture = TestBed.createComponent(Admin);
+    const component = fixture.componentInstance;
+    const legacyVideo = video({ hlsManifestPath: 'processed/hls/v1/playlist.m3u8' });
+
+    component.openPreview(legacyVideo);
+
+    expect(component.getPreviewUrl()).toBe('/api/videos/video-1/stream');
+  });
+
+  it('labels a failed preview with the failure label', () => {
+    const fixture = TestBed.createComponent(Admin);
+    const component = fixture.componentInstance;
+
+    component.openPreview(video({ processingStatus: 'failed' }));
+
+    expect(component.getPreviewStatusLabel()).toBe('Xử lý thất bại');
   });
 });
 

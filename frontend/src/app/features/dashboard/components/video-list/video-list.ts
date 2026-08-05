@@ -110,7 +110,15 @@ export class VideoList {
     }
 
     if (video.processingStatus === 'pending') {
-      return 'Đang xếp hàng';
+      return 'Đang đóng gói HLS';
+    }
+
+    if (video.processingStatus === 'failed') {
+      return 'Xử lý thất bại';
+    }
+
+    if (video.streamVariant === 'hls-only') {
+      return 'Sẵn sàng HLS gốc';
     }
 
     return 'Sẵn sàng bản gốc';
@@ -121,6 +129,15 @@ export class VideoList {
   }
 
   getPreviewUrl(video: Video) {
+    if (
+      video.mediaType === 'video' &&
+      video.streamVariant === 'hls-only' &&
+      video.processingStatus === 'ready' &&
+      video.hlsManifestPath
+    ) {
+      return `/api/videos/${video.id}/hls/playlist.m3u8?v=${encodeURIComponent(video.updatedAt)}`;
+    }
+
     return `/api/videos/${video.id}/stream?v=${encodeURIComponent(video.updatedAt)}`;
   }
 

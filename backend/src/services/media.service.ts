@@ -6,6 +6,7 @@ import ffmpegPath from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 import { getConfig } from '../config';
 import { dbRepository } from '../db';
+import { AppError } from '../errors';
 import { logError, logInfo } from '../logger';
 import type { Video } from '../types';
 
@@ -16,6 +17,7 @@ const queue: string[] = [];
 let isProcessing = false;
 
 interface FfprobeStream {
+    codec_name?: string;
     codec_type?: string;
     height?: number;
     width?: number;
@@ -107,40 +109,76 @@ const createPoster = async (sourcePath: string, outputPath: string) => {
     });
 };
 
-const transcodeToHls = async (sourcePath: string, outputDir: string) => {
-    const ffmpegBinary = getRequiredBinary(ffmpegPath, 'ffmpeg');
-    await fs.emptyDir(outputDir);
+export const validateHlsOnlySource = async (sourcePath: string): Promise<Partial<Video>> => {
+    const ffprobePath = getRequiredBinary(ffprobeStatic.path, 'ffprobe');
+    let metadata: FfprobeOutput;
 
-    const playlistPath = path.join(outputDir, 'playlist.m3u8');
-    const segmentPattern = path.join(outputDir, 'segment-%03d.ts');
+    try {
+        const { stdout } = await execFileAsync(ffprobePath, [
+            '-v',
+            'error',
+            '-print_format',
+            'json',
+            '-show_format',
+            '-show_streams',
+            sourcePath,
+        ]);
+
+        metadata = JSON.parse(stdout) as FfprobeOutput;
+    } catch {
+        throw new AppError(
+            400,
+            'VIDEO_CODEC_UNSUPPORTED',
+            'Không thể đọc video, file có thể bị hỏng hoặc không phải video hợp lệ. Chỉ hỗ trợ video H.264/AAC (HLS stream copy).',
+        );
+    }
+
+    const videoStream = metadata.streams?.find((stream) => stream.codec_type === 'video');
+    const audioStreams = metadata.streams?.filter((stream) => stream.codec_type === 'audio') ?? [];
+
+    if (videoStream?.codec_name !== 'h264') {
+        const detected = videoStream?.codec_name ? ` ${videoStream.codec_name}` : ' (none detected)';
+        throw new AppError(
+            400,
+            'VIDEO_CODEC_UNSUPPORTED',
+            `Chỉ hỗ trợ video H.264/AAC (HLS stream copy). Phát hiện codec${detected}.`,
+        );
+    }
+
+    const unsupportedAudioCodec = audioStreams.find((stream) => stream.codec_name !== 'aac');
+    if (unsupportedAudioCodec?.codec_name) {
+        throw new AppError(
+            400,
+            'VIDEO_CODEC_UNSUPPORTED',
+            `Chỉ hỗ trợ audio AAC hoặc video không có audio (HLS stream copy). Phát hiện audio codec ${unsupportedAudioCodec.codec_name}.`,
+        );
+    }
+
+    const duration = metadata.format?.duration ? Number(metadata.format.duration) : undefined;
+
+    return {
+        durationSeconds: Number.isFinite(duration) ? duration : undefined,
+        height: videoStream?.height,
+        width: videoStream?.width,
+    };
+};
+
+const packageStreamCopy = async (sourcePath: string, hlsDir: string): Promise<string> => {
+    const ffmpegBinary = getRequiredBinary(ffmpegPath, 'ffmpeg');
+    await fs.emptyDir(hlsDir);
+
+    const playlistPath = path.join(hlsDir, 'playlist.m3u8');
+    const segmentPattern = path.join(hlsDir, 'segment-%03d.ts');
 
     await new Promise<void>((resolve, reject) => {
         const process = spawn(ffmpegBinary, [
             '-y',
             '-i',
             sourcePath,
-            '-preset',
-            'veryfast',
-            '-crf',
-            '24',
-            '-maxrate',
-            '3500k',
-            '-bufsize',
-            '7000k',
-            '-vf',
-            'scale=w=1920:h=1080:force_original_aspect_ratio=decrease',
-            '-pix_fmt',
-            'yuv420p',
-            '-profile:v',
-            'high',
-            '-level',
-            '4.1',
             '-c:v',
-            'libx264',
+            'copy',
             '-c:a',
-            'aac',
-            '-b:a',
-            '128k',
+            'copy',
             '-hls_time',
             '6',
             '-hls_playlist_type',
@@ -169,7 +207,49 @@ const transcodeToHls = async (sourcePath: string, outputDir: string) => {
         });
     });
 
+    const playlistContent = await fs.readFile(playlistPath, 'utf8');
+    const segmentEntries = [...playlistContent.matchAll(/(?:^|\n)segment-\d+\.ts/g)].map(
+        (match) => match[0].trim(),
+    );
+
+    if (!segmentEntries.length) {
+        await fs.remove(hlsDir);
+        throw hlsGenerationError('no segments found in the generated playlist.');
+    }
+
+    const existingSegments = await Promise.all(
+        segmentEntries.map(async (entry) => {
+            const segmentPath = path.join(hlsDir, entry);
+            const segmentStats = await fs.stat(segmentPath).catch(() => null);
+            return segmentStats && segmentStats.size > 0 ? segmentPath : null;
+        }),
+    );
+
+    if (!existingSegments.some(Boolean)) {
+        await fs.remove(hlsDir);
+        throw hlsGenerationError('playlist has no segment file with content on disk.');
+    }
+
     return playlistPath;
+};
+
+const hlsGenerationError = (message: string) => {
+    const error = new Error(`VIDEO_HLS_GENERATION_FAILED: ${message}`) as Error & {
+        code?: string;
+    };
+    error.code = 'VIDEO_HLS_GENERATION_FAILED';
+
+    return error;
+};
+
+export const packageHlsOnly = async (
+    sourcePath: string,
+    videoId: string,
+): Promise<{ hlsManifestPath: string }> => {
+    const hlsDir = ensureHlsDir(videoId);
+    const playlistPath = await packageStreamCopy(sourcePath, hlsDir);
+
+    return { hlsManifestPath: playlistPath };
 };
 
 const processNext = async () => {
@@ -210,25 +290,14 @@ const processNext = async () => {
             });
         }
 
-        const hlsDir = ensureHlsDir(video.id);
-        let hlsManifestPath: string | undefined;
-        try {
-            const playlistPath = await transcodeToHls(sourcePath, hlsDir);
-            hlsManifestPath = toUploadsRelativePath(playlistPath);
-        } catch (error) {
-            await fs.remove(hlsDir);
-            logError('media.hls_failed', {
-                error: error instanceof Error ? error.message : String(error),
-                videoId,
-            });
-        }
+        const { hlsManifestPath: manifestPath } = await packageHlsOnly(sourcePath, video.id);
+        const hlsManifestPath = toUploadsRelativePath(manifestPath);
 
         await dbRepository.updateVideo(videoId, (draft) => {
             draft.filename = video.sourceFilename;
             draft.mimeType = video.sourceMimeType || video.mimeType || 'video/mp4';
             draft.processingError = undefined;
             draft.size = sourceStats.size;
-            draft.streamVariant = 'original';
             draft.durationSeconds = mediaMetadata.durationSeconds || draft.durationSeconds;
             draft.height = mediaMetadata.height || draft.height;
             draft.width = mediaMetadata.width || draft.width;
@@ -236,6 +305,16 @@ const processNext = async () => {
             draft.posterFilename = posterFilename;
             draft.processingStatus = 'ready';
         });
+
+        try {
+            await fs.remove(sourcePath);
+        } catch (error) {
+            logError('media.source_remove_failed', {
+                error: error instanceof Error ? error.message : String(error),
+                sourcePath,
+                videoId,
+            });
+        }
 
         logInfo('media.processed', { videoId });
     } catch (error) {
@@ -248,9 +327,8 @@ const processNext = async () => {
         await dbRepository.updateVideo(videoId, (draft) => {
             draft.hlsManifestPath = undefined;
             draft.posterFilename = undefined;
-            draft.processingStatus = 'ready';
-            draft.processingError = 'Không thể xử lý media, đang dùng bản gốc.';
-            draft.streamVariant = 'original';
+            draft.processingStatus = 'failed';
+            draft.processingError = 'Không thể tạo HLS từ video gốc, video đã giữ lại nguồn gốc.';
         });
     } finally {
         isProcessing = false;

@@ -1,7 +1,7 @@
 export type MediaType = 'video' | 'image';
-export type VideoProcessingStatus = 'pending' | 'processing' | 'ready';
+export type VideoProcessingStatus = 'pending' | 'processing' | 'ready' | 'failed';
 export type VideoStorageProvider = 'local';
-export type VideoStreamVariant = 'optimized' | 'original';
+export type VideoStreamVariant = 'optimized' | 'original' | 'hls-only';
 export type UploadSessionStatus = 'uploading' | 'assembling' | 'completed';
 export type ProfileOrientation = 'landscape' | 'rotate90' | 'rotate180' | 'rotate270';
 

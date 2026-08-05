@@ -16,8 +16,33 @@ sqlite.pragma('foreign_keys = ON');
 sqlite.pragma('busy_timeout = 5000');
 sqlite.pragma('synchronous = NORMAL');
 
-sqlite.exec(`
-CREATE TABLE IF NOT EXISTS users (
+const VIDEOS_TABLE_SQL = `
+CREATE TABLE videos (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    source_filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    media_type TEXT NOT NULL CHECK (media_type IN ('video', 'image')),
+    mime_type TEXT,
+    source_mime_type TEXT,
+    source_size INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    storage_provider TEXT NOT NULL CHECK (storage_provider = 'local'),
+    stream_variant TEXT NOT NULL CHECK (stream_variant IN ('optimized', 'original', 'hls-only')),
+    processing_status TEXT NOT NULL CHECK (processing_status IN ('pending', 'processing', 'ready', 'failed')),
+    processing_error TEXT,
+    poster_filename TEXT,
+    hls_manifest_path TEXT,
+    duration_seconds REAL,
+    width INTEGER,
+    height INTEGER,
+    uploaded_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+`;
+
+sqlite.exec(`CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
@@ -40,8 +65,8 @@ CREATE TABLE IF NOT EXISTS videos (
     source_size INTEGER NOT NULL,
     size INTEGER NOT NULL,
     storage_provider TEXT NOT NULL CHECK (storage_provider = 'local'),
-    stream_variant TEXT NOT NULL CHECK (stream_variant IN ('optimized', 'original')),
-    processing_status TEXT NOT NULL CHECK (processing_status IN ('pending', 'processing', 'ready')),
+    stream_variant TEXT NOT NULL CHECK (stream_variant IN ('optimized', 'original', 'hls-only')),
+    processing_status TEXT NOT NULL CHECK (processing_status IN ('pending', 'processing', 'ready', 'failed')),
     processing_error TEXT,
     poster_filename TEXT,
     hls_manifest_path TEXT,
@@ -72,8 +97,83 @@ CREATE TABLE IF NOT EXISTS profile_videos (
 );
 
 CREATE INDEX IF NOT EXISTS idx_profile_videos_video_id ON profile_videos(video_id);
+`);
 
-CREATE TABLE IF NOT EXISTS devices (
+const migrateVideosTableConstraints = () => {
+    const videosTable = sqlite.prepare(`
+        SELECT sql
+        FROM sqlite_master
+        WHERE type = 'table' AND name = 'videos'
+    `).get() as { sql: string } | undefined;
+
+    if (!videosTable) {
+        return;
+    }
+
+    const hasNewConstraints =
+        videosTable.sql.includes('optimized') &&
+        videosTable.sql.includes('original') &&
+        videosTable.sql.includes('hls-only') &&
+        videosTable.sql.includes('pending') &&
+        videosTable.sql.includes('processing') &&
+        videosTable.sql.includes('ready') &&
+        videosTable.sql.includes('failed');
+
+    if (hasNewConstraints) {
+        return;
+    }
+
+    const foreignKeysEnabled = Boolean(sqlite.pragma('foreign_keys', { simple: true }));
+    if (foreignKeysEnabled) {
+        sqlite.pragma('foreign_keys = OFF');
+    }
+
+    try {
+        sqlite.transaction(() => {
+            sqlite.exec('DROP TABLE IF EXISTS videos_new;');
+            sqlite.exec(VIDEOS_TABLE_SQL.replace('CREATE TABLE videos', 'CREATE TABLE videos_new'));
+            sqlite.exec(`
+                INSERT INTO videos_new (
+                    id, filename, source_filename, original_name, media_type, mime_type,
+                    source_mime_type, source_size, size, storage_provider, stream_variant,
+                    processing_status, processing_error, poster_filename, hls_manifest_path,
+                    duration_seconds, width, height, uploaded_at, created_at, updated_at
+                )
+                SELECT
+                    id, filename, source_filename, original_name, media_type, mime_type,
+                    source_mime_type, source_size, size, storage_provider, stream_variant,
+                    processing_status, processing_error, poster_filename, hls_manifest_path,
+                    duration_seconds, width, height, uploaded_at, created_at, updated_at
+                FROM videos;
+            `);
+            sqlite.exec('DROP TABLE videos;');
+            sqlite.exec(VIDEOS_TABLE_SQL);
+            sqlite.exec(`
+                INSERT INTO videos (
+                    id, filename, source_filename, original_name, media_type, mime_type,
+                    source_mime_type, source_size, size, storage_provider, stream_variant,
+                    processing_status, processing_error, poster_filename, hls_manifest_path,
+                    duration_seconds, width, height, uploaded_at, created_at, updated_at
+                )
+                SELECT
+                    id, filename, source_filename, original_name, media_type, mime_type,
+                    source_mime_type, source_size, size, storage_provider, stream_variant,
+                    processing_status, processing_error, poster_filename, hls_manifest_path,
+                    duration_seconds, width, height, uploaded_at, created_at, updated_at
+                FROM videos_new;
+            `);
+            sqlite.exec('DROP TABLE videos_new;');
+        })();
+    } finally {
+        if (foreignKeysEnabled) {
+            sqlite.pragma('foreign_keys = ON');
+        }
+    }
+};
+
+migrateVideosTableConstraints();
+
+sqlite.exec(`CREATE TABLE IF NOT EXISTS devices (
     id TEXT PRIMARY KEY,
     device_code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,

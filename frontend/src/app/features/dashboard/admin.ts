@@ -199,7 +199,20 @@ export class Admin implements OnInit {
 
   getPreviewUrl() {
     const video = this.previewingVideo();
-    return video ? this.api.getMediaStreamUrl(video) : '';
+    if (!video) {
+      return '';
+    }
+
+    if (
+      video.mediaType === 'video' &&
+      video.streamVariant === 'hls-only' &&
+      video.processingStatus === 'ready' &&
+      video.hlsManifestPath
+    ) {
+      return this.api.getVideoHlsManifestUrl(video);
+    }
+
+    return this.api.getMediaStreamUrl(video);
   }
 
   getPreviewTypeLabel() {
@@ -226,7 +239,15 @@ export class Admin implements OnInit {
     }
 
     if (video.processingStatus === 'pending') {
-      return 'Đang xếp hàng';
+      return 'Đang đóng gói HLS';
+    }
+
+    if (video.processingStatus === 'failed') {
+      return 'Xử lý thất bại';
+    }
+
+    if (video.streamVariant === 'hls-only') {
+      return 'Sẵn sàng HLS gốc';
     }
 
     return video.streamVariant === 'optimized' ? 'Sẵn sàng HD' : 'Sẵn sàng bản gốc';

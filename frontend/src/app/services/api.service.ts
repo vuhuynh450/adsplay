@@ -15,13 +15,13 @@ export interface Video {
     originalName: string;
     posterFilename?: string;
     processingError?: string;
-    processingStatus: 'pending' | 'processing' | 'ready';
+    processingStatus: 'pending' | 'processing' | 'ready' | 'failed';
     sourceFilename: string;
     sourceMimeType?: string;
     sourceSize: number;
     size: number;
     storageProvider: 'local';
-    streamVariant: 'optimized' | 'original';
+    streamVariant: 'optimized' | 'original' | 'hls-only';
     updatedAt: string;
     uploadedAt: string;
     usageCount?: number;

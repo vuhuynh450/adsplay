@@ -69,4 +69,37 @@ describe('VideoList', () => {
     expect(component.getUploadHint()).toContain('MP4, WebM, OGG, MOV, JPG, PNG, GIF, WebP');
     expect(component.getUploadHint()).not.toContain('R2');
   });
+
+  it('labels a ready hls-only video with the HLS-only label', () => {
+    const component = new VideoList();
+
+    expect(component.getProcessingLabel({ ...video({ streamVariant: 'hls-only' }) })).toBe('Sẵn sàng HLS gốc');
+  });
+
+  it('uses the HLS manifest URL for a ready hls-only video preview', () => {
+    const component = new VideoList();
+    const hlsOnlyVideo = video({
+      hlsManifestPath: 'processed/hls/v1/playlist.m3u8',
+      streamVariant: 'hls-only',
+    });
+
+    expect(component.getPreviewUrl(hlsOnlyVideo)).toBe(
+      `/api/videos/${hlsOnlyVideo.id}/hls/playlist.m3u8?v=${encodeURIComponent(hlsOnlyVideo.updatedAt)}`,
+    );
+  });
+
+  it('keeps the stream URL for a legacy ready video preview', () => {
+    const component = new VideoList();
+    const legacyVideo = video({ hlsManifestPath: 'processed/hls/v1/playlist.m3u8' });
+
+    expect(component.getPreviewUrl(legacyVideo)).toBe(
+      `/api/videos/${legacyVideo.id}/stream?v=${encodeURIComponent(legacyVideo.updatedAt)}`,
+    );
+  });
+
+  it('labels a failed video with the failure label', () => {
+    const component = new VideoList();
+
+    expect(component.getProcessingLabel({ ...video({ processingStatus: 'failed' }) })).toBe('Xử lý thất bại');
+  });
 });

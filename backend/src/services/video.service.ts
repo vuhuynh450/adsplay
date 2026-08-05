@@ -6,7 +6,7 @@ import { getConfig } from '../config';
 import { AppError } from '../errors';
 import { logError } from '../logger';
 import type { Video } from '../types';
-import { enqueueVideoProcessing } from './media.service';
+import { enqueueVideoProcessing, validateHlsOnlySource } from './media.service';
 
 const config = getConfig();
 const VIDEO_MIME_TYPES: string[] = ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'];
@@ -55,8 +55,14 @@ const createVideoRecord = async (input: {
     const mediaType = inferMediaType(input.mimeType);
     const shouldProcess = config.mediaProcessingEnabled && mediaType === 'video';
 
+    const hlsOnlyMetadata = shouldProcess
+        ? await validateHlsOnlySource(path.join(config.uploadsDir, input.filename))
+        : undefined;
+
     const video = await dbRepository.saveVideo({
         filename: input.filename,
+        durationSeconds: hlsOnlyMetadata?.durationSeconds,
+        height: hlsOnlyMetadata?.height,
         id: crypto.randomUUID(),
         mediaType,
         mimeType: input.mimeType,
@@ -67,8 +73,9 @@ const createVideoRecord = async (input: {
         sourceSize: input.size,
         size: input.size,
         storageProvider: 'local',
-        streamVariant: 'original',
+        streamVariant: shouldProcess ? 'hls-only' : 'original',
         uploadedAt: new Date().toISOString(),
+        width: hlsOnlyMetadata?.width,
     });
 
     if (video.mediaType === 'video') {
@@ -123,6 +130,11 @@ export type VideoStreamSource = {
 
 export const getVideoStreamSource = async (id: string): Promise<VideoStreamSource> => {
     const video = await getVideoById(id);
+
+    if (video.streamVariant === 'hls-only') {
+        throw new AppError(409, 'VIDEO_STREAM_HLS_ONLY', 'This video is available through HLS only.');
+    }
+
     const preferredPath = path.join(config.uploadsDir, video.filename);
     const sourcePath = path.join(config.uploadsDir, video.sourceFilename);
     const candidatePaths = preferredPath === sourcePath ? [preferredPath] : [preferredPath, sourcePath];

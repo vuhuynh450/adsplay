@@ -192,6 +192,9 @@ videoRouter.post(
             if (await fs.pathExists(destinationPath)) {
                 await fs.remove(destinationPath);
             }
+            if (error instanceof AppError && error.code === 'VIDEO_CODEC_UNSUPPORTED') {
+                await deleteUploadSession(sessionId);
+            }
             throw error;
         }
     }),
@@ -291,8 +294,15 @@ videoRouter.post(
             throw new AppError(400, 'UPLOAD_MISSING_FILE', 'No file uploaded.');
         }
 
-        const video = await saveUploadedVideo(req.file);
-        res.json(video);
+        try {
+            const video = await saveUploadedVideo(req.file);
+            res.json(video);
+        } catch (error) {
+            if (error instanceof AppError && error.code === 'VIDEO_CODEC_UNSUPPORTED') {
+                await fs.remove(path.join(config.uploadsDir, req.file.filename));
+            }
+            throw error;
+        }
     }),
 );
 

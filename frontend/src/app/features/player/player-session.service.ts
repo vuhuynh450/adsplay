@@ -260,7 +260,12 @@ export class PlayerSessionService {
   }
 
   onVideoError() {
-    if (this.activePlaybackMode === 'hls' && this.activePlayback && !this.hasTriedMp4Fallback) {
+    if (
+      this.activePlaybackMode === 'hls' &&
+      this.activePlayback &&
+      this.activePlayback.sourceUrl &&
+      !this.hasTriedMp4Fallback
+    ) {
       void this.fallbackToMp4(this.activePlayback);
       return;
     }
@@ -818,12 +823,16 @@ export class PlayerSessionService {
     }
 
     const video = activeProfile.videos[index];
-    const serverUrl = this.api.getMediaStreamUrl(video);
     const posterUrl = video.posterFilename ? this.api.getVideoPosterUrl(video) : '';
     const hlsUrl =
       video.mediaType === 'video' && video.processingStatus === 'ready' && video.hlsManifestPath
         ? this.api.getVideoHlsManifestUrl(video)
         : null;
+    const isHlsOnly =
+      video.mediaType === 'video' &&
+      video.streamVariant === 'hls-only' &&
+      video.processingStatus === 'ready' &&
+      Boolean(video.hlsManifestPath);
     const loadToken = ++this.activeLoadToken;
 
     if (video.mediaType === 'image') {
@@ -833,10 +842,24 @@ export class PlayerSessionService {
         loadToken,
         mediaType: 'image',
         posterUrl: '',
-        sourceUrl: serverUrl,
+        sourceUrl: this.api.getMediaStreamUrl(video),
       });
       return;
     }
+
+    if (isHlsOnly) {
+      this.releaseCurrentObjectUrl();
+      await this.applyPlayback({
+        hlsUrl,
+        loadToken,
+        mediaType: 'video',
+        posterUrl,
+        sourceUrl: '',
+      });
+      return;
+    }
+
+    const serverUrl = this.api.getMediaStreamUrl(video);
 
     if (hlsUrl) {
       this.releaseCurrentObjectUrl();
@@ -1049,6 +1072,7 @@ export class PlayerSessionService {
   private shouldCacheVideo(video: Video) {
     return (
       video.mediaType === 'video' &&
+      video.streamVariant !== 'hls-only' &&
       video.processingStatus === 'ready' &&
       video.size > 0 &&
       video.size <= PlayerSessionService.MAX_CACHEABLE_VIDEO_BYTES
@@ -1325,7 +1349,12 @@ export class PlayerSessionService {
             return;
           }
 
-          void this.fallbackToMp4(playback);
+          if (playback.sourceUrl) {
+            void this.fallbackToMp4(playback);
+            return;
+          }
+
+          this.onVideoEnded();
         });
 
         hlsInstance.on(Hls.Events.MEDIA_ATTACHED, () => {
