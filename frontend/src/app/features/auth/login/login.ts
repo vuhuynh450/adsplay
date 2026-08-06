@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { finalize, throwError, timeout } from 'rxjs';
 import { AuthService } from '../../../services/auth.service';
 import { getErrorMessage } from '../../../shared/utils/error-message';
 
@@ -135,14 +136,21 @@ export class Login {
     this.loading = true;
     this.error = '';
 
-    this.authService.login(this.username, this.password).subscribe({
+    this.authService.login(this.username, this.password).pipe(
+      timeout({
+        first: 10_000,
+        with: () => throwError(() => new Error('Không thể kết nối đến máy chủ. Vui lòng thử lại.')),
+      }),
+      finalize(() => {
+        this.loading = false;
+      }),
+    ).subscribe({
       next: () => {
         const path = this.authService.loginRedirectPath();
         this.router.navigate([path]);
       },
       error: (err) => {
         this.error = getErrorMessage(err, 'Tài khoản hoặc mật khẩu không chính xác');
-        this.loading = false;
       }
     });
   }
